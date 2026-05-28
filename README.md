@@ -117,7 +117,7 @@ For a production build:
 
 ```bash
 npm run build
-node server/dist/index.js     # server + dashboard both served on :3001
+node server/dist/index.js     # server + dashboard both served on :3002
 ```
 
 ## Using the API
@@ -130,7 +130,7 @@ Any OpenAI-compatible client works. Examples:
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:3001/v1",
+    base_url="http://localhost:3002/v1",
     api_key="freellmapi-your-unified-key",
 )
 
@@ -145,7 +145,7 @@ print("Routed via:", resp.headers.get("x-routed-via"))
 **curl**
 
 ```bash
-curl http://localhost:3001/v1/chat/completions \
+curl http://localhost:3002/v1/chat/completions \
   -H "Authorization: Bearer freellmapi-your-unified-key" \
   -H "Content-Type: application/json" \
   -d '{
@@ -234,7 +234,7 @@ Request volume, success rate, tokens in and out, average latency, and per-provid
 
 ```
 ┌──────────────────┐   Bearer freellmapi-…   ┌─────────────────────────┐
-│  OpenAI SDK /    │ ──────────────────────▶ │  Express proxy (:3001)  │
+│  OpenAI SDK /    │ ──────────────────────▶ │  Express proxy (:3002)  │
 │  curl / any      │ ◀────────────────────── │  /v1/chat/completions   │
 │  OpenAI client   │      streamed tokens    └────────────┬────────────┘
 └──────────────────┘                                      │
@@ -285,7 +285,7 @@ Contributors very welcome! Good first PRs:
 
 ```bash
 npm install
-npm run dev      # server on :3001, dashboard on :5173, both with HMR
+npm run dev      # server on :3002, dashboard on :5173, both with HMR
 npm test         # server vitest; also runs client tests if the workspace adds them
 npm run build    # compile server and dashboard
 ```

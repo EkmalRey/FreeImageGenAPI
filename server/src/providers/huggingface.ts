@@ -1,9 +1,9 @@
 import type { ImageGenerationResponse } from '@freellmapi/shared/types.js';
 import { BaseProvider, type ImageGenerationOptions } from './base.js';
 
-export class CloudflareProvider extends BaseProvider {
-  readonly platform = 'cloudflare';
-  readonly name = 'Cloudflare Workers AI';
+export class HuggingFaceProvider extends BaseProvider {
+  readonly platform = 'huggingface';
+  readonly name = 'Hugging Face Inference';
 
   async generateImage(
     apiKey: string,
@@ -11,14 +11,8 @@ export class CloudflareProvider extends BaseProvider {
     modelId: string,
     options?: ImageGenerationOptions,
   ): Promise<ImageGenerationResponse> {
-    const parts = apiKey.split(':');
-    if (parts.length !== 2) {
-      throw new Error('Cloudflare key must be in format "ACCOUNT_ID:API_TOKEN"');
-    }
-    const [accountId, token] = parts;
-
-    const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${modelId}`;
-
+    const url = `https://api-inference.huggingface.co/models/${modelId}`;
+    
     const data = [];
     const n = options?.n ?? 1;
 
@@ -26,21 +20,20 @@ export class CloudflareProvider extends BaseProvider {
       const res = await this.fetchWithTimeout(url, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ inputs: prompt }),
       });
 
       if (!res.ok) {
         const text = await res.text().catch(() => 'No error body');
-        throw new Error(`Cloudflare failed: ${res.status} ${text}`);
+        throw new Error(`HuggingFace failed: ${res.status} ${text}`);
       }
 
-      // Cloudflare returns binary image
       const buffer = await res.arrayBuffer();
       const b64 = Buffer.from(buffer).toString('base64');
-      const mime = 'image/png'; // usually PNG or JPEG
+      const mime = 'image/jpeg'; 
 
       if (options?.response_format === 'url') {
         data.push({ url: `data:${mime};base64,${b64}` });
@@ -57,12 +50,9 @@ export class CloudflareProvider extends BaseProvider {
 
   async validateKey(apiKey: string): Promise<boolean> {
     try {
-      const parts = apiKey.split(':');
-      if (parts.length !== 2) return false;
-      const [accountId, token] = parts;
-      const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/models/search`;
+      const url = 'https://huggingface.co/api/whoami-v2';
       const res = await this.fetchWithTimeout(url, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${apiKey}` },
       }, 5000);
       return res.ok;
     } catch {

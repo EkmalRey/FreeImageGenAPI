@@ -1,27 +1,14 @@
 // ---- Platform & Model Types ----
 
-// Active platforms — must match server/src/providers/index.ts and
-// server/src/routes/keys.ts PLATFORMS allowlist.
-// Moonshot and MiniMax direct integrations were dropped in migrateModelsV4
-// (see server/src/db/index.ts). HuggingFace was dropped in V4 and re-added
-// in V13 via the router.huggingface.co Inference Providers meta-router.
 export type Platform =
-  | 'google'
-  | 'groq'
-  | 'cerebras'
-  | 'sambanova'
-  | 'nvidia'
-  | 'mistral'
-  | 'openrouter'
-  | 'github'
-  | 'cohere'
-  | 'cloudflare'
-  | 'zhipu'
-  | 'ollama'
-  | 'kilo'
   | 'pollinations'
-  | 'llm7'
-  | 'huggingface';
+  | 'huggingface'
+  | 'cloudflare'
+  | 'together'
+  | 'fal'
+  | 'deepinfra'
+  | 'segmind'
+  | 'openai-compat';
 
 export interface Model {
   id: number;
@@ -73,107 +60,35 @@ export interface FallbackEntry {
 
 // ---- OpenAI-Compatible Types ----
 
-export interface ChatToolCallFunction {
-  name: string;
-  arguments: string;
-}
-
-export interface ChatToolCall {
-  id: string;
-  type: 'function';
-  function: ChatToolCallFunction;
-  thought_signature?: string;
-}
-
-export interface ChatToolFunctionDefinition {
-  name: string;
-  description?: string;
-  parameters?: Record<string, unknown>;
-  strict?: boolean;
-}
-
-export interface ChatToolDefinition {
-  type: 'function';
-  function: ChatToolFunctionDefinition;
-}
-
-export type ChatToolChoice =
-  | 'none'
-  | 'auto'
-  | 'required'
-  | {
-    type: 'function';
-    function: {
-      name: string;
-    };
-  };
-
-// OpenAI's multimodal envelope: clients like opencode / continue.dev send
-// content as an array of typed blocks even for text-only messages. We accept
-// it on the wire and flatten to string for providers that don't support it
-// (Cohere, Cloudflare). See server/src/lib/content.ts.
-export type ChatContentBlock = { type: string; text?: string; [key: string]: unknown };
-export type ChatContent = string | null | ChatContentBlock[];
-
-export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool';
-  content: ChatContent;
-  name?: string;
-  tool_call_id?: string;
-  tool_calls?: ChatToolCall[];
-}
-
-export interface ChatCompletionRequest {
+export interface ImageGenerationRequest {
   model?: string;
-  messages: ChatMessage[];
-  temperature?: number;
-  max_tokens?: number;
-  stream?: boolean;
-  top_p?: number;
-  tools?: ChatToolDefinition[];
-  tool_choice?: ChatToolChoice;
-  parallel_tool_calls?: boolean;
+  prompt: string;
+  n?: number;
+  size?: string;
+  response_format?: 'url' | 'b64_json';
+  quality?: 'standard' | 'hd';
+  style?: 'vivid' | 'natural';
 }
 
-export interface ChatCompletionChoice {
-  index: number;
-  message: ChatMessage;
-  finish_reason: string | null;
+export interface ImageGenerationResponseData {
+  url?: string;
+  b64_json?: string;
+  revised_prompt?: string;
 }
 
-export interface TokenUsage {
-  prompt_tokens: number;
-  completion_tokens: number;
-  total_tokens: number;
-}
-
-export interface ChatCompletionResponse {
-  id: string;
-  object: 'chat.completion';
+export interface ImageGenerationResponse {
   created: number;
-  model: string;
-  choices: ChatCompletionChoice[];
-  usage: TokenUsage;
+  data: ImageGenerationResponseData[];
   _routed_via?: {
     platform: Platform;
     model: string;
   };
 }
 
-export interface ChatCompletionChunk {
-  id: string;
-  object: 'chat.completion.chunk';
-  created: number;
-  model: string;
-  choices: {
-    index: number;
-    delta: {
-      role?: 'assistant';
-      content?: string;
-      tool_calls?: ChatToolCall[];
-    };
-    finish_reason: string | null;
-  }[];
+export interface TokenUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
 }
 
 // ---- Analytics Types ----
@@ -208,7 +123,7 @@ export interface RequestLog {
   platform: Platform;
   modelId: string;
   status: 'success' | 'error';
-  inputTokens: number;
+  inputTokens: number; // We keep these for DB compat, just map 1 request -> 1 "token" or use input tokens for dimensions
   outputTokens: number;
   latencyMs: number;
   error: string | null;

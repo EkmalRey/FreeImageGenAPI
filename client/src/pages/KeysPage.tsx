@@ -10,22 +10,13 @@ import { PageHeader } from '@/components/page-header'
 import type { ApiKey, Platform } from '../../../shared/types'
 
 const PLATFORMS: { value: Platform; label: string }[] = [
-  { value: 'google', label: 'Google AI Studio' },
-  { value: 'groq', label: 'Groq' },
-  { value: 'cerebras', label: 'Cerebras' },
-  { value: 'sambanova', label: 'SambaNova' },
-  { value: 'nvidia', label: 'NVIDIA NIM' },
-  { value: 'mistral', label: 'Mistral' },
-  { value: 'openrouter', label: 'OpenRouter' },
-  { value: 'github', label: 'GitHub Models' },
-  { value: 'cohere', label: 'Cohere' },
   { value: 'cloudflare', label: 'Cloudflare Workers AI' },
-  { value: 'zhipu', label: 'Zhipu AI (Z.ai)' },
-  { value: 'ollama', label: 'Ollama Cloud' },
-  { value: 'kilo', label: 'Kilo Gateway (anon ok)' },
   { value: 'pollinations', label: 'Pollinations (anon ok)' },
-  { value: 'llm7', label: 'LLM7 (anon ok)' },
   { value: 'huggingface', label: 'HuggingFace Router' },
+  { value: 'together', label: 'Together AI' },
+  { value: 'fal', label: 'Fal.ai' },
+  { value: 'deepinfra', label: 'DeepInfra' },
+  { value: 'segmind', label: 'Segmind' },
 ]
 
 const statusDot: Record<string, string> = {
@@ -92,7 +83,7 @@ function UnifiedKeySection() {
         <div>
           <h2 className="text-sm font-medium">Your unified API key</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Use this as your OpenAI <code className="font-mono">api_key</code>; it authenticates requests to this proxy.
+            Use this as your API <code className="font-mono">api_key</code>; it authenticates requests to this proxy.
           </p>
         </div>
         <Button
@@ -121,7 +112,7 @@ function UnifiedKeySection() {
         <span className="text-muted-foreground">Base URL</span>
         <code className="font-mono">{baseUrl}</code>
         <span className="text-muted-foreground">Endpoint</span>
-        <code className="font-mono">/v1/chat/completions</code>
+        <code className="font-mono">/v1/images/generations</code>
       </div>
     </section>
   )
