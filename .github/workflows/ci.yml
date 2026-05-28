@@ -19,7 +19,10 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm install
+        run: |
+          npm install
+          # Lockfile generated on Windows; ensure Linux optional deps are present
+          npm install @rollup/rollup-linux-x64-gnu --no-save
 
       - name: Run tests
         run: npm test
