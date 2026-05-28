@@ -55,6 +55,15 @@ function recordUsage(
   });
 }
 
+function getWindowStart(windowMs: number, now: number): number {
+  if (windowMs === DAY) {
+    const d = new Date(now);
+    d.setUTCHours(0, 0, 0, 0);
+    return d.getTime();
+  }
+  return now - windowMs;
+}
+
 function countPersistedRequests(
   platform: string,
   modelId: string,
@@ -71,7 +80,7 @@ function countPersistedRequests(
          AND key_id = ?
          AND kind = 'request'
          AND created_at_ms > ?
-    `).get(platform, modelId, keyId, now - windowMs) as { used: number };
+    `).get(platform, modelId, keyId, getWindowStart(windowMs, now)) as { used: number };
     return row.used;
   });
 }
@@ -84,28 +93,58 @@ function sumPersistedTokens(
   now: number,
 ): number | undefined {
   return withDb(db => {
-    const row = db.prepare(`
-      SELECT COALESCE(SUM(tokens), 0) AS used
-        FROM rate_limit_usage
-       WHERE platform = ?
-         AND model_id = ?
-         AND key_id = ?
-         AND kind = 'tokens'
-         AND created_at_ms > ?
-    `).get(platform, modelId, keyId, now - windowMs) as { used: number };
+    let query, params;
+    if (platform === 'cloudflare') {
+      query = `
+        SELECT COALESCE(SUM(tokens), 0) AS used
+          FROM rate_limit_usage
+         WHERE platform = ?
+           AND key_id = ?
+           AND kind = 'tokens'
+           AND created_at_ms > ?
+      `;
+      params = [platform, keyId, getWindowStart(windowMs, now)];
+    } else {
+      query = `
+        SELECT COALESCE(SUM(tokens), 0) AS used
+          FROM rate_limit_usage
+         WHERE platform = ?
+           AND model_id = ?
+           AND key_id = ?
+           AND kind = 'tokens'
+           AND created_at_ms > ?
+      `;
+      params = [platform, modelId, keyId, getWindowStart(windowMs, now)];
+    }
+    const row = db.prepare(query).get(...params) as { used: number };
     return row.used;
   });
 }
 
 function memoryRequestCount(key: string, windowMs: number, now: number): number {
   const w = getWindow(key);
-  w.timestamps = pruneTimestamps(w.timestamps, windowMs, now);
+  const cutoff = getWindowStart(windowMs, now);
+  w.timestamps = w.timestamps.filter(ts => ts > cutoff);
   return w.timestamps.length;
 }
 
-function memoryTokenCount(key: string, windowMs: number, now: number): number {
+function memoryTokenCount(key: string, windowMs: number, now: number, platform: string, keyId: number, type: string): number {
+  const cutoff = getWindowStart(windowMs, now);
+  
+  if (platform === 'cloudflare') {
+    let sum = 0;
+    for (const [k, w] of windows.entries()) {
+      const parts = k.split(':');
+      if (parts[0] === platform && parts[2] === String(keyId) && parts[3] === type) {
+        w.tokenTimestamps = w.tokenTimestamps.filter(t => t.ts > cutoff);
+        sum += w.tokenTimestamps.reduce((s, t) => s + t.tokens, 0);
+      }
+    }
+    return sum;
+  }
+
   const w = getWindow(key);
-  w.tokenTimestamps = w.tokenTimestamps.filter(t => t.ts > now - windowMs);
+  w.tokenTimestamps = w.tokenTimestamps.filter(t => t.ts > cutoff);
   return w.tokenTimestamps.reduce((sum, t) => sum + t.tokens, 0);
 }
 
@@ -132,7 +171,7 @@ function tokenCount(
   const persisted = sumPersistedTokens(platform, modelId, keyId, windowMs, now);
   if (persisted !== undefined) return persisted;
   const type = windowMs === MINUTE ? 'tpm' : 'tpd';
-  return memoryTokenCount(`${platform}:${modelId}:${keyId}:${type}`, windowMs, now);
+  return memoryTokenCount(`${platform}:${modelId}:${keyId}:${type}`, windowMs, now, platform, keyId, type);
 }
 
 export function canMakeRequest(

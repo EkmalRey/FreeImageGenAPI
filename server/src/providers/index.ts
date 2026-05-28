@@ -25,6 +25,10 @@ register(new OpenAICompatProvider({
   platform: 'together',
   name: 'Together AI',
   baseUrl: 'https://api.together.xyz/v1',
+  staticModels: [
+    { model_id: 'black-forest-labs/FLUX.1-schnell', display_name: 'Flux Schnell (Together)', intelligence_rank: 1, speed_rank: 4, size_label: 'Standard', monthly_token_budget: '$25 Trial' },
+    { model_id: 'stabilityai/stable-diffusion-xl-base-1.0', display_name: 'SDXL (Together)', intelligence_rank: 3, speed_rank: 4, size_label: 'Standard', monthly_token_budget: '$25 Trial' }
+  ]
 }));
 
 // Fal.ai
@@ -39,6 +43,9 @@ register(new OpenAICompatProvider({
   platform: 'deepinfra',
   name: 'DeepInfra',
   baseUrl: 'https://api.deepinfra.com/v1/openai',
+  staticModels: [
+    { model_id: 'black-forest-labs/FLUX-1-schnell', display_name: 'Flux Schnell (DeepInfra)', intelligence_rank: 1, speed_rank: 5, size_label: 'Standard', monthly_token_budget: 'Trial' }
+  ]
 }));
 
 // Segmind

@@ -51,4 +51,42 @@ export class PollinationsProvider extends BaseProvider {
     // Pollinations doesn't require a key
     return true;
   }
+
+  async syncModels(_apiKey: string, db: import('better-sqlite3').Database): Promise<void> {
+    try {
+      const res = await this.fetchWithTimeout('https://image.pollinations.ai/models', {}, 10000);
+      if (!res.ok) return;
+
+      const models = await res.json() as string[];
+      
+      const disableOld = db.prepare(`UPDATE models SET enabled = 0 WHERE platform = 'pollinations'`);
+      const insertModel = db.prepare(`
+        INSERT INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, size_label, monthly_token_budget, enabled)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+        ON CONFLICT(platform, model_id) DO UPDATE SET enabled = 1
+      `);
+      
+      const insertFallback = db.prepare(`
+        INSERT INTO fallback_config (model_db_id, priority, enabled)
+        SELECT id, (SELECT COALESCE(MAX(priority), 0) + 1 FROM fallback_config), 1
+        FROM models 
+        WHERE platform = ? AND model_id = ?
+        AND id NOT IN (SELECT model_db_id FROM fallback_config)
+      `);
+
+      const syncAll = db.transaction(() => {
+        disableOld.run();
+        for (const modelId of models) {
+          const displayName = modelId.charAt(0).toUpperCase() + modelId.slice(1) + ' (Pollinations)';
+          insertModel.run('pollinations', modelId, displayName, 1, 1, 'Standard', 'Unlimited');
+          insertFallback.run('pollinations', modelId);
+        }
+      });
+      
+      syncAll();
+      console.log(`[Pollinations] Synced ${models.length} image generation models.`);
+    } catch (e) {
+      console.error('[Pollinations] Failed to sync models:', e);
+    }
+  }
 }

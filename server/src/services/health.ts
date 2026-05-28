@@ -28,6 +28,8 @@ export async function checkKeyHealth(keyId: number): Promise<KeyStatus> {
 
     if (isValid) {
       failureCount.delete(keyId);
+      // Sync models asynchronously
+      provider.syncModels(apiKey, db).catch(err => console.error(`[Health] Failed to sync models for key ${keyId}:`, err));
     } else {
       const count = (failureCount.get(keyId) ?? 0) + 1;
       failureCount.set(keyId, count);

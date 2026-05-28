@@ -16,6 +16,7 @@ fallbackRouter.get('/', (_req: Request, res: Response) => {
            m.monthly_token_budget
     FROM fallback_config fc
     JOIN models m ON m.id = fc.model_db_id
+    WHERE m.enabled = 1
     ORDER BY fc.priority ASC
   `).all() as any[];
 
@@ -144,13 +145,30 @@ fallbackRouter.get('/token-usage', (_req: Request, res: Response) => {
   }
 
   // Build per-model breakdown (only platforms with keys)
-  const modelBudgets = models
-    .filter(m => platformSet.has(m.platform))
-    .map(m => ({
-      displayName: m.display_name,
-      platform: m.platform,
-      budget: parseBudget(m.monthly_token_budget),
-    }));
+  const modelBudgets: { displayName: string; platform: string; budget: number }[] = [];
+  const handledPlatforms = new Set<string>();
+
+  for (const m of models) {
+    if (!platformSet.has(m.platform)) continue;
+    
+    // If it's a shared-limit platform (like Cloudflare), only emit one budget item for the entire platform
+    if (m.platform === 'cloudflare') {
+      if (!handledPlatforms.has(m.platform)) {
+        modelBudgets.push({
+          displayName: 'Cloudflare (Shared)',
+          platform: m.platform,
+          budget: parseBudget(m.monthly_token_budget),
+        });
+        handledPlatforms.add(m.platform);
+      }
+    } else {
+      modelBudgets.push({
+        displayName: m.display_name,
+        platform: m.platform,
+        budget: parseBudget(m.monthly_token_budget),
+      });
+    }
+  }
 
   const totalBudget = modelBudgets.reduce((s, m) => s + m.budget, 0);
 

@@ -2,6 +2,7 @@ import type {
   Platform,
   ImageGenerationResponse,
 } from '@freellmapi/shared/types.js';
+import type { Database } from 'better-sqlite3';
 
 export interface ImageGenerationOptions {
   n?: number;
@@ -23,6 +24,10 @@ export abstract class BaseProvider {
   ): Promise<ImageGenerationResponse>;
 
   abstract validateKey(apiKey: string): Promise<boolean>;
+
+  async syncModels(apiKey: string, db: Database): Promise<void> {
+    // Override in specific providers to dynamically sync models
+  }
 
   protected async fetchWithTimeout(
     url: string,

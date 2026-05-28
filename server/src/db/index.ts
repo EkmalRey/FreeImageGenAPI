@@ -35,6 +35,7 @@ export function initDb(dbPath?: string): Database.Database {
   createTables(db);
   initEncryptionKey(db);
   seedModels(db);
+  migrateModelIds(db);
   
   // Note: Migration functions removed for FreeImageGenAPI as it's a fresh schema
   
@@ -142,48 +143,32 @@ function ensureRequestKeyIdColumn(db: Database.Database) {
 }
 
 function seedModels(db: Database.Database) {
-  const count = db.prepare('SELECT COUNT(*) as cnt FROM models').get() as { cnt: number };
-  if (count.cnt > 0) return;
+  // Models are no longer hardcoded. They are dynamically synced when API keys are checked.
+  // Fallback config is also generated dynamically during model sync.
+}
 
-  const insert = db.prepare(`
-    INSERT INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, size_label, rpm_limit, rpd_limit, tpm_limit, tpd_limit, monthly_token_budget, context_window)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const models = [
-    // Pollinations
-    ['pollinations', 'flux', 'Flux (Pollinations)', 1, 1, 'Standard', 30, null, null, null, 'Unlimited', null],
-    ['pollinations', 'turbo', 'Turbo (Pollinations)', 2, 2, 'Fast', 30, null, null, null, 'Unlimited', null],
-    // Hugging Face
-    ['huggingface', 'black-forest-labs/FLUX.1-schnell', 'FLUX.1-schnell (HF)', 1, 3, 'Standard', null, null, null, null, 'Free Tier', null],
-    // Cloudflare Workers AI
-    ['cloudflare', '@cf/black-forest-labs/flux-schnell', 'Flux Schnell (CF)', 2, 3, 'Standard', null, 10000, null, null, '10K Neurons', null],
-    ['cloudflare', '@cf/stabilityai/stable-diffusion-xl-base-1.0', 'SDXL Base (CF)', 3, 3, 'Standard', null, 10000, null, null, '10K Neurons', null],
-    // Together AI
-    ['together', 'black-forest-labs/FLUX.1-schnell', 'Flux Schnell (Together)', 1, 4, 'Standard', null, null, null, null, '$25 Trial', null],
-    ['together', 'stabilityai/stable-diffusion-xl-base-1.0', 'SDXL (Together)', 3, 4, 'Standard', null, null, null, null, '$25 Trial', null],
-    // DeepInfra
-    ['deepinfra', 'black-forest-labs/FLUX-1-schnell', 'Flux Schnell (DeepInfra)', 1, 5, 'Standard', null, null, null, null, 'Trial', null],
+function migrateModelIds(db: Database.Database) {
+  // Fix incorrect model IDs from older seed data
+  const fixes: [string, string][] = [
+    ['@cf/black-forest-labs/flux-schnell', '@cf/black-forest-labs/flux-1-schnell'],
   ];
-
-  const insertMany = db.transaction(() => {
-    for (const m of models) {
-      insert.run(...m);
+  const check = db.prepare('SELECT id FROM models WHERE platform = ? AND model_id = ?');
+  const delFallback = db.prepare('DELETE FROM fallback_config WHERE model_db_id = ?');
+  const del = db.prepare('DELETE FROM models WHERE platform = ? AND model_id = ?');
+  const update = db.prepare('UPDATE models SET model_id = ?, display_name = ? WHERE platform = ? AND model_id = ?');
+  for (const [oldId, newId] of fixes) {
+    const oldRow = check.get('cloudflare', oldId) as { id: number } | undefined;
+    if (!oldRow) continue;
+    const newExists = check.get('cloudflare', newId);
+    if (newExists) {
+      // New ID already exists — remove fallback ref then the old model
+      delFallback.run(oldRow.id);
+      del.run('cloudflare', oldId);
+    } else {
+      const displayName = newId.split('/').pop() || newId;
+      update.run(newId, displayName, 'cloudflare', oldId);
     }
-  });
-  insertMany();
-
-  // Seed default fallback config from models
-  const allModels = db.prepare('SELECT id, intelligence_rank FROM models ORDER BY intelligence_rank ASC').all() as { id: number; intelligence_rank: number }[];
-  const insertFallback = db.prepare('INSERT INTO fallback_config (model_db_id, priority, enabled) VALUES (?, ?, 1)');
-  const insertFallbacks = db.transaction(() => {
-    for (let i = 0; i < allModels.length; i++) {
-      insertFallback.run(allModels[i].id, i + 1);
-    }
-  });
-  insertFallbacks();
-
-  console.log('Seeded Image Generation models and fallback config');
+  }
 }
 
 function ensureUnifiedKey(db: Database.Database) {

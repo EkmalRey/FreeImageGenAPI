@@ -152,7 +152,9 @@ proxyRouter.post('/images/generations', async (req: Request, res: Response) => {
         { n, size, response_format, quality, style }
       );
 
-      recordTokens(route.platform, route.modelId, route.keyId, estimatedTokens);
+      const actualTokens = result._usage?.total_tokens ?? estimatedTokens;
+
+      recordTokens(route.platform, route.modelId, route.keyId, actualTokens);
       recordSuccess(route.modelDbId);
 
       res.setHeader('X-Routed-Via', `${route.platform}/${route.modelId}`);
@@ -160,13 +162,14 @@ proxyRouter.post('/images/generations', async (req: Request, res: Response) => {
       res.json({
         created: Math.floor(Date.now() / 1000),
         data: result.data,
-        _routed_via: { platform: route.platform, model: route.modelId }
+        _routed_via: { platform: route.platform, model: route.modelId },
+        _usage: { total_tokens: actualTokens }
       });
 
       logRequest(
         route.platform, route.modelId, route.keyId, 'success',
         prompt.length, // inputTokens = prompt length proxy
-        estimatedTokens, // outputTokens = images generated
+        actualTokens, // outputTokens = images generated or actual neurons
         Date.now() - start, null,
       );
       return;

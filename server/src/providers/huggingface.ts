@@ -59,4 +59,39 @@ export class HuggingFaceProvider extends BaseProvider {
       return false;
     }
   }
+
+  async syncModels(_apiKey: string, db: import('better-sqlite3').Database): Promise<void> {
+    const staticModels = [
+      { model_id: 'black-forest-labs/FLUX.1-schnell', display_name: 'FLUX.1-schnell (HF)', intelligence_rank: 1, speed_rank: 3, size_label: 'Standard', monthly_token_budget: 'Free Tier' }
+    ];
+
+    try {
+      const disableOld = db.prepare(`UPDATE models SET enabled = 0 WHERE platform = 'huggingface'`);
+      const insertModel = db.prepare(`
+        INSERT INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, size_label, monthly_token_budget, enabled)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+        ON CONFLICT(platform, model_id) DO UPDATE SET enabled = 1
+      `);
+      const insertFallback = db.prepare(`
+        INSERT INTO fallback_config (model_db_id, priority, enabled)
+        SELECT id, (SELECT COALESCE(MAX(priority), 0) + 1 FROM fallback_config), 1
+        FROM models 
+        WHERE platform = ? AND model_id = ?
+        AND id NOT IN (SELECT model_db_id FROM fallback_config)
+      `);
+
+      const syncAll = db.transaction(() => {
+        disableOld.run();
+        for (const m of staticModels) {
+          insertModel.run('huggingface', m.model_id, m.display_name, m.intelligence_rank, m.speed_rank, m.size_label, m.monthly_token_budget);
+          insertFallback.run('huggingface', m.model_id);
+        }
+      });
+
+      syncAll();
+      console.log(`[Hugging Face] Synced ${staticModels.length} static image models.`);
+    } catch (e) {
+      console.error('[Hugging Face] Failed to sync models:', e);
+    }
+  }
 }

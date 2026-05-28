@@ -83,6 +83,9 @@ export interface ImageGenerationResponse {
     platform: Platform;
     model: string;
   };
+  _usage?: {
+    total_tokens: number;
+  };
 }
 
 export interface TokenUsage {
