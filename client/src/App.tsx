@@ -70,35 +70,69 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter basename={import.meta.env.BASE_URL}>
-        <div className="min-h-screen bg-background">
-          <header className="sticky top-0 z-40 bg-background/80 backdrop-blur border-b">
-            <div className="max-w-6xl mx-auto px-6 flex items-center">
-              <Brand />
-              <nav className="flex items-center gap-6 ml-10">
-                <NavItem to="/playground">Playground</NavItem>
-                <NavItem to="/keys">Keys</NavItem>
-                <NavItem to="/fallback">Fallback</NavItem>
-                <NavItem to="/analytics">Analytics</NavItem>
-              </nav>
-              <div className="ml-auto py-2">
-                <DarkModeToggle />
+        <Routes>
+          <Route
+            path="/playground"
+            element={<PlaygroundLayout />}
+          />
+          <Route
+            path="*"
+            element={
+              <div className="min-h-screen bg-background">
+                <header className="sticky top-0 z-40 bg-background/80 backdrop-blur border-b">
+                  <div className="max-w-6xl mx-auto px-6 flex items-center h-12">
+                    <Brand />
+                    <nav className="flex items-center gap-6 ml-10">
+                      <NavItem to="/playground">Playground</NavItem>
+                      <NavItem to="/keys">Keys</NavItem>
+                      <NavItem to="/fallback">Fallback</NavItem>
+                      <NavItem to="/analytics">Analytics</NavItem>
+                    </nav>
+                    <div className="ml-auto py-2">
+                      <DarkModeToggle />
+                    </div>
+                  </div>
+                </header>
+                <main className="max-w-6xl mx-auto px-6 py-8">
+                  <Routes>
+                    <Route path="/" element={<Navigate to="/playground" replace />} />
+                    <Route path="/keys" element={<KeysPage />} />
+                    <Route path="/fallback" element={<FallbackPage />} />
+                    <Route path="/analytics" element={<AnalyticsPage />} />
+                    <Route path="/test" element={<Navigate to="/playground" replace />} />
+                    <Route path="/health" element={<Navigate to="/keys" replace />} />
+                  </Routes>
+                </main>
               </div>
-            </div>
-          </header>
-          <main className="max-w-6xl mx-auto px-6 py-8">
-            <Routes>
-              <Route path="/" element={<Navigate to="/playground" replace />} />
-              <Route path="/playground" element={<PlaygroundPage />} />
-              <Route path="/keys" element={<KeysPage />} />
-              <Route path="/fallback" element={<FallbackPage />} />
-              <Route path="/analytics" element={<AnalyticsPage />} />
-              <Route path="/test" element={<Navigate to="/playground" replace />} />
-              <Route path="/health" element={<Navigate to="/keys" replace />} />
-            </Routes>
-          </main>
-        </div>
+            }
+          />
+        </Routes>
       </BrowserRouter>
     </QueryClientProvider>
+  )
+}
+
+function PlaygroundLayout() {
+  return (
+    <div className="h-screen bg-background flex flex-col overflow-hidden">
+      <header className="shrink-0 z-40 bg-background/80 backdrop-blur border-b">
+        <div className="max-w-6xl mx-auto px-6 flex items-center h-12">
+          <Brand />
+          <nav className="flex items-center gap-6 ml-10">
+            <NavItem to="/playground">Playground</NavItem>
+            <NavItem to="/keys">Keys</NavItem>
+            <NavItem to="/fallback">Fallback</NavItem>
+            <NavItem to="/analytics">Analytics</NavItem>
+          </nav>
+          <div className="ml-auto">
+            <DarkModeToggle />
+          </div>
+        </div>
+      </header>
+      <div className="flex-1 min-h-0">
+        <PlaygroundPage />
+      </div>
+    </div>
   )
 }
 

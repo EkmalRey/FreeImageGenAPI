@@ -125,6 +125,7 @@
     }
     html {
         @apply font-sans antialiased;
+        overflow-y: scroll;
         font-feature-settings: 'ss01', 'cv11';
         text-rendering: optimizeLegibility;
         -webkit-font-smoothing: antialiased;
@@ -145,5 +146,25 @@
     /* Tighter focus ring across inputs */
     input, textarea, select {
         font-feature-settings: 'ss01';
+    }
+}
+
+@layer utilities {
+    .scrollbar-styled {
+        scrollbar-width: thin;
+        scrollbar-color: var(--border) transparent;
+    }
+    .scrollbar-styled::-webkit-scrollbar {
+        width: 6px;
+    }
+    .scrollbar-styled::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .scrollbar-styled::-webkit-scrollbar-thumb {
+        background-color: var(--border);
+        border-radius: 3px;
+    }
+    .scrollbar-styled::-webkit-scrollbar-thumb:hover {
+        background-color: var(--muted-foreground);
     }
 }

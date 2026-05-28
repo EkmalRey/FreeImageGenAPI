@@ -124,6 +124,33 @@ function createTables(db: Database.Database) {
       value TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS chat_sessions (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      selected_model TEXT NOT NULL DEFAULT 'auto',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+      role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+      prompt TEXT,
+      image_url TEXT,
+      image_b64 TEXT,
+      revised_prompt TEXT,
+      platform TEXT,
+      model TEXT,
+      latency_ms INTEGER,
+      file_size_kb REAL,
+      dimensions TEXT,
+      error TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_created ON chat_messages(created_at);
     CREATE INDEX IF NOT EXISTS idx_requests_created_at ON requests(created_at);
     CREATE INDEX IF NOT EXISTS idx_requests_platform ON requests(platform);
     CREATE INDEX IF NOT EXISTS idx_rate_limit_usage_lookup ON rate_limit_usage(platform, model_id, key_id, kind, created_at_ms);
@@ -132,6 +159,14 @@ function createTables(db: Database.Database) {
   `);
 
   ensureRequestKeyIdColumn(db);
+  ensureChatSessionsModelColumn(db);
+}
+
+function ensureChatSessionsModelColumn(db: Database.Database) {
+  const columns = db.prepare('PRAGMA table_info(chat_sessions)').all() as { name: string }[];
+  if (!columns.some(col => col.name === 'selected_model')) {
+    db.prepare("ALTER TABLE chat_sessions ADD COLUMN selected_model TEXT NOT NULL DEFAULT 'auto'").run();
+  }
 }
 
 function ensureRequestKeyIdColumn(db: Database.Database) {
