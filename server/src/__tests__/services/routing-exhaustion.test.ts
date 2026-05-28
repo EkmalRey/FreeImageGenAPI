@@ -46,6 +46,7 @@ const LOW_PRIORITY_MODEL = 'stabilityai/stable-diffusion-xl-base-1.0';
 
 describe('Routing Key Exhaustion', () => {
   beforeEach(() => {
+    process.env.ENCRYPTION_KEY = '0'.repeat(64);
     process.env.DEV_MODE = 'true';
     process.env.NODE_ENV = 'test';
     initDb(':memory:');
