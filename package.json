@@ -1,5 +1,5 @@
 {
-  "name": "freellmapi",
+  "name": "freeimagegenapi",
   "private": true,
   "workspaces": [
     "shared",

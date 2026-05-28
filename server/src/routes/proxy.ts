@@ -65,7 +65,7 @@ export function isRetryableError(err: any): boolean {
     || msg.includes('econnrefused') || msg.includes('econnreset')
     || msg.includes('503') || msg.includes('unavailable')
     || msg.includes('500') || msg.includes('internal server error')
-    || msg.includes('413') || msg.includes('payload too large') || msg.includes('request body too large')
+    || msg.includes('413') || msg.includes('payload too large') || msg.includes('request body too large') || msg.includes('request entity too large') || msg.includes('content too large')
     || msg.includes('404') || msg.includes('not found') || msg.includes('no endpoints found')
     || msg.includes('api error 400')
     || msg.includes('nsfw') || msg.includes('safety'); // Sometimes safety filters trip on one provider but not another

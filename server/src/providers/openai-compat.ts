@@ -1,4 +1,4 @@
-import type { Platform, ImageGenerationResponse } from '@freellmapi/shared/types.js';
+import type { Platform, ImageGenerationResponse } from '@freeimagegenapi/shared/types.js';
 import { BaseProvider, type ImageGenerationOptions } from './base.js';
 
 export interface OpenAICompatModel {

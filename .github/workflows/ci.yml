@@ -23,6 +23,8 @@ jobs:
 
       - name: Run tests
         run: npm test
+        env:
+          ENCRYPTION_KEY: 0000000000000000000000000000000000000000000000000000000000000000
 
       - name: Build workspaces
         run: npm run build

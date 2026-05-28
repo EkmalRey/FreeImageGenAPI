@@ -1,4 +1,4 @@
-import type { ImageGenerationResponse } from '@freellmapi/shared/types.js';
+import type { ImageGenerationResponse } from '@freeimagegenapi/shared/types.js';
 import type { Database } from 'better-sqlite3';
 import { BaseProvider, type ImageGenerationOptions } from './base.js';
 

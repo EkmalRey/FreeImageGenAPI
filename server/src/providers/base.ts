@@ -1,7 +1,7 @@
 import type {
   Platform,
   ImageGenerationResponse,
-} from '@freellmapi/shared/types.js';
+} from '@freeimagegenapi/shared/types.js';
 import type { Database } from 'better-sqlite3';
 
 export interface ImageGenerationOptions {

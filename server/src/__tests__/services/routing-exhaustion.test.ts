@@ -40,6 +40,10 @@ function restoreEnv() {
   }
 }
 
+const PLATFORM = 'together';
+const HIGH_PRIORITY_MODEL = 'black-forest-labs/FLUX.1-schnell';
+const LOW_PRIORITY_MODEL = 'stabilityai/stable-diffusion-xl-base-1.0';
+
 describe('Routing Key Exhaustion', () => {
   beforeEach(() => {
     process.env.DEV_MODE = 'true';
@@ -47,20 +51,19 @@ describe('Routing Key Exhaustion', () => {
     initDb(':memory:');
     const db = getDb();
     
-    // Setup: 2 models (Pro and Flash)
-    // Pro is higher priority (priority 1), Flash is lower (priority 2)
-    db.prepare("INSERT INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, enabled) VALUES ('google', 'gemini-1.5-pro', 'Pro', 1, 1, 1)").run();
-    db.prepare("INSERT INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, enabled) VALUES ('google', 'gemini-1.5-flash', 'Flash', 2, 2, 1)").run();
+    // Setup: 2 models (High priority and Low priority)
+    db.prepare(`INSERT INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, enabled) VALUES (?, ?, 'Flux Schnell', 1, 1, 1)`).run(PLATFORM, HIGH_PRIORITY_MODEL);
+    db.prepare(`INSERT INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, enabled) VALUES (?, ?, 'SDXL', 2, 2, 1)`).run(PLATFORM, LOW_PRIORITY_MODEL);
     
-    const proId = db.prepare("SELECT id FROM models WHERE model_id = 'gemini-1.5-pro'").get().id;
-    const flashId = db.prepare("SELECT id FROM models WHERE model_id = 'gemini-1.5-flash'").get().id;
+    const highId = db.prepare('SELECT id FROM models WHERE model_id = ?').get(HIGH_PRIORITY_MODEL).id;
+    const lowId = db.prepare('SELECT id FROM models WHERE model_id = ?').get(LOW_PRIORITY_MODEL).id;
     
-    db.prepare("INSERT INTO fallback_config (model_db_id, priority, enabled) VALUES (?, 1, 1)").run(proId);
-    db.prepare("INSERT INTO fallback_config (model_db_id, priority, enabled) VALUES (?, 2, 1)").run(flashId);
+    db.prepare('INSERT INTO fallback_config (model_db_id, priority, enabled) VALUES (?, 1, 1)').run(highId);
+    db.prepare('INSERT INTO fallback_config (model_db_id, priority, enabled) VALUES (?, 2, 1)').run(lowId);
     
-    // Setup: 2 keys for Google
-    db.prepare("INSERT INTO api_keys (platform, label, encrypted_key, iv, auth_tag, status, enabled) VALUES ('google', 'Key A', 'enc', 'iv', 'tag', 'healthy', 1)").run();
-    db.prepare("INSERT INTO api_keys (platform, label, encrypted_key, iv, auth_tag, status, enabled) VALUES ('google', 'Key B', 'enc', 'iv', 'tag', 'healthy', 1)").run();
+    // Setup: 2 keys for the platform
+    db.prepare("INSERT INTO api_keys (platform, label, encrypted_key, iv, auth_tag, status, enabled) VALUES (?, 'Key A', 'enc', 'iv', 'tag', 'healthy', 1)").run(PLATFORM);
+    db.prepare("INSERT INTO api_keys (platform, label, encrypted_key, iv, auth_tag, status, enabled) VALUES (?, 'Key B', 'enc', 'iv', 'tag', 'healthy', 1)").run(PLATFORM);
 
     vi.clearAllMocks();
   });
@@ -88,8 +91,8 @@ describe('Routing Key Exhaustion', () => {
     // Act: Route request
     const result = routeRequest(100);
 
-    // Assert: It should have picked the Pro model despite Key B being exhausted
-    expect(result.modelId).toBe('gemini-1.5-pro');
+    // Assert: It should have picked the high-priority model despite Key B being exhausted
+    expect(result.modelId).toBe(HIGH_PRIORITY_MODEL);
     expect(result.keyId).toBe(keyA.id);
     expect(ratelimit.canMakeRequest).toHaveBeenCalled();
   });
@@ -99,15 +102,15 @@ describe('Routing Key Exhaustion', () => {
     expect(() => routeRequest(100)).toThrow(/All models exhausted/);
   });
 
-  it('should fall back to Flash when Pro is exhausted but Flash has quota', () => {
+  it('should fall back to low-priority model when high-priority is exhausted', () => {
     (ratelimit.canMakeRequest as any).mockImplementation((_platform: string, modelId: string) => {
-      if (modelId === 'gemini-1.5-pro') return false;
-      if (modelId === 'gemini-1.5-flash') return true;
+      if (modelId === HIGH_PRIORITY_MODEL) return false;
+      if (modelId === LOW_PRIORITY_MODEL) return true;
       return true;
     });
     (ratelimit.canUseTokens as any).mockReturnValue(true);
 
     const result = routeRequest(100);
-    expect(result.modelId).toBe('gemini-1.5-flash');
+    expect(result.modelId).toBe(LOW_PRIORITY_MODEL);
   });
 });

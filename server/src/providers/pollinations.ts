@@ -1,4 +1,4 @@
-import type { ImageGenerationResponse } from '@freellmapi/shared/types.js';
+import type { ImageGenerationResponse } from '@freeimagegenapi/shared/types.js';
 import { BaseProvider, type ImageGenerationOptions } from './base.js';
 
 export class PollinationsProvider extends BaseProvider {

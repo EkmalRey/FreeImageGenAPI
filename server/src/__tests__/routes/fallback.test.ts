@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import type { Express } from 'express';
 import { createApp } from '../../app.js';
-import { initDb } from '../../db/index.js';
+import { initDb, getDb } from '../../db/index.js';
 
 async function request(app: Express, method: string, path: string, body?: any) {
   const server = app.listen(0);
@@ -19,12 +19,34 @@ async function request(app: Express, method: string, path: string, body?: any) {
   return { status: res.status, body: data };
 }
 
+function seedTestModels() {
+  const db = getDb();
+  const models = [
+    { platform: 'together', model_id: 'black-forest-labs/FLUX.1-schnell', display_name: 'Flux Schnell', rank: 1, speed: 4 },
+    { platform: 'together', model_id: 'stabilityai/stable-diffusion-xl-base-1.0', display_name: 'SDXL', rank: 2, speed: 4 },
+    { platform: 'cloudflare', model_id: '@cf/black-forest-labs/flux-1-schnell', display_name: 'Flux Schnell (CF)', rank: 1, speed: 3 },
+  ];
+  const insertModel = db.prepare(
+    'INSERT INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, enabled) VALUES (?, ?, ?, ?, ?, 1)'
+  );
+  const insertFallback = db.prepare(
+    'INSERT INTO fallback_config (model_db_id, priority, enabled) VALUES (?, ?, 1)'
+  );
+  for (let i = 0; i < models.length; i++) {
+    const m = models[i];
+    insertModel.run(m.platform, m.model_id, m.display_name, m.rank, m.speed);
+    const row = db.prepare('SELECT id FROM models WHERE model_id = ?').get(m.model_id) as { id: number };
+    insertFallback.run(row.id, i + 1);
+  }
+}
+
 describe('Fallback API', () => {
   let app: Express;
 
   beforeAll(() => {
     process.env.ENCRYPTION_KEY = '0'.repeat(64);
     initDb(':memory:');
+    seedTestModels();
     app = createApp();
   });
 
