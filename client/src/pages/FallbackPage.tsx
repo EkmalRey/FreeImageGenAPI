@@ -97,7 +97,7 @@ function TokenUsageBar({ data }: { data: TokenUsageData }) {
   return (
     <section className="rounded-lg border bg-card p-5">
       <div className="flex items-baseline justify-between mb-3">
-        <h2 className="text-sm font-medium">Token budget</h2>
+        <h2 className="text-sm font-medium">Token budget remaining</h2>
         <span className="text-xs text-muted-foreground tabular-nums">
           <span className="text-foreground font-medium">{formatTokens(remaining)}</span> remaining
           <span className="mx-1.5">·</span>
@@ -142,6 +142,15 @@ function TokenUsageBar({ data }: { data: TokenUsageData }) {
   )
 }
 
+function MetaItem({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[11px] leading-none text-muted-foreground">{label}</div>
+      <div className="mt-1 text-sm font-medium leading-none truncate">{children}</div>
+    </div>
+  )
+}
+
 function SortableModelRow({
   entry,
   index,
@@ -164,74 +173,84 @@ function SortableModelRow({
     <div
       ref={setNodeRef}
       style={style}
-      className={`group flex items-center gap-3 px-4 py-3 bg-card ${isDragging ? 'opacity-50' : ''} ${entry.enabled ? '' : 'opacity-50'}`}
+      className={`group px-4 py-4 bg-card ${isDragging ? 'opacity-50' : ''} ${entry.enabled ? '' : 'opacity-60'}`}
     >
-      <button
-        {...attributes}
-        {...listeners}
-        className="cursor-grab active:cursor-grabbing text-muted-foreground/50 hover:text-foreground transition-colors"
-        aria-label="Drag to reorder"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-          <circle cx="9" cy="6" r="1.5" /><circle cx="15" cy="6" r="1.5" />
-          <circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" />
-          <circle cx="9" cy="18" r="1.5" /><circle cx="15" cy="18" r="1.5" />
-        </svg>
-      </button>
-      <span className="text-xs font-mono text-muted-foreground w-5 tabular-nums">{index + 1}</span>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-medium text-sm">{entry.displayName}</span>
-          <span className="text-xs text-muted-foreground">{entry.platform}</span>
-          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${entry.taskType === 'img2img' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'bg-blue-500/15 text-blue-600 dark:text-blue-400'}`}>
-            {entry.taskType === 'img2img' ? 'img2img' : 'txt2img'}
-          </span>
-          {entry.penalty > 0 && (
-            <span className="text-xs text-amber-600 dark:text-amber-400">
-              −{entry.penalty} penalty
+      <div className="flex items-start gap-3">
+        <button
+          {...attributes}
+          {...listeners}
+          className="mt-1 cursor-grab active:cursor-grabbing text-muted-foreground/50 hover:text-foreground transition-colors"
+          aria-label="Drag to reorder"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="9" cy="6" r="1.5" /><circle cx="15" cy="6" r="1.5" />
+            <circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" />
+            <circle cx="9" cy="18" r="1.5" /><circle cx="15" cy="18" r="1.5" />
+          </svg>
+        </button>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-mono text-muted-foreground">
+              #{index + 1}
             </span>
-          )}
-        </div>
-        <div className="flex gap-3 mt-0.5 text-xs text-muted-foreground tabular-nums">
-          <span>Intel #{entry.intelligenceRank}</span>
-          <span>Speed #{entry.speedRank}</span>
-          {entry.rpmLimit && <span>{entry.rpmLimit} rpm</span>}
-          {entry.rpdLimit && <span>{entry.rpdLimit} rpd</span>}
-          <span>{entry.monthlyTokenBudget}</span>
-        </div>
-        {entry.keyCount > 0 && (
-          <div className="flex gap-1.5 mt-1">
-            {entry.keyHealth.healthy > 0 && (
-              <span className="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
-                <span className="size-1.5 rounded-full bg-green-500" />
+            <span className="truncate text-sm font-semibold">{entry.displayName}</span>
+            {entry.keyCount > 0 && entry.keyHealth.healthy > 0 && (
+              <span className="ml-auto inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-300">
+                <span className="size-1.5 rounded-full bg-emerald-500" />
                 {entry.keyHealth.healthy} healthy
               </span>
             )}
-            {entry.keyHealth.rateLimited > 0 && (
-              <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+            {entry.keyCount > 0 && entry.keyHealth.rateLimited > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300">
                 <span className="size-1.5 rounded-full bg-amber-500" />
                 {entry.keyHealth.rateLimited} limited
               </span>
             )}
-            {entry.keyHealth.invalid > 0 && (
-              <span className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
+            {entry.keyCount > 0 && entry.keyHealth.invalid > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-xs text-red-700 dark:text-red-300">
                 <span className="size-1.5 rounded-full bg-red-500" />
                 {entry.keyHealth.invalid} invalid
               </span>
             )}
-            {entry.keyHealth.error > 0 && (
-              <span className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
+            {entry.keyCount > 0 && entry.keyHealth.error > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-xs text-red-700 dark:text-red-300">
                 <span className="size-1.5 rounded-full bg-red-500" />
                 {entry.keyHealth.error} error
               </span>
             )}
+            <Switch
+              checked={entry.enabled}
+              onCheckedChange={(checked) => onToggle(entry.modelDbId, checked)}
+            />
           </div>
-        )}
+
+          {entry.penalty > 0 && (
+            <div className="mt-2 inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+              Penalty {entry.penalty}
+            </div>
+          )}
+
+          <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-6">
+            <MetaItem label="Provider">{entry.platform}</MetaItem>
+            <MetaItem label="Intelligence">#{entry.intelligenceRank}</MetaItem>
+            <MetaItem label="Speed">#{entry.speedRank}</MetaItem>
+            <MetaItem label="Task">
+              <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${entry.taskType === 'img2img' ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300'}`}>
+                {entry.taskType === 'img2img' ? 'img2img' : 'txt2img'}
+              </span>
+            </MetaItem>
+            <MetaItem label="Rate limits">
+              {entry.rpmLimit || entry.rpdLimit ? (
+                <span>{entry.rpmLimit ?? '—'} rpm · {entry.rpdLimit ?? '—'} rpd</span>
+              ) : (
+                <span className="text-muted-foreground">No limits</span>
+              )}
+            </MetaItem>
+            <MetaItem label="Budget">{entry.monthlyTokenBudget || '—'}</MetaItem>
+          </div>
+        </div>
       </div>
-      <Switch
-        checked={entry.enabled}
-        onCheckedChange={(checked) => onToggle(entry.modelDbId, checked)}
-      />
     </div>
   )
 }
@@ -346,7 +365,7 @@ export default function FallbackPage() {
           </div>
         ) : (
           <>
-            <div className="rounded-lg border divide-y overflow-hidden">
+            <div className="rounded-xl border divide-y overflow-hidden">
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
