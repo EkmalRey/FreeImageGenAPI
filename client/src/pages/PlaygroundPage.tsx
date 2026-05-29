@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/api'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Maximize2, Copy, Download, Paperclip, X } from 'lucide-react'
+import { ModelPicker } from '@/components/ModelPicker'
 
 interface ChatSession {
   id: string
@@ -276,11 +277,6 @@ export default function PlaygroundPage() {
       await updateSessionModel(activeSessionId, v)
       queryClient.invalidateQueries({ queryKey: ['chat-sessions'] })
     }
-  }
-
-  // Wrap for Select's onValueChange type (value may be null)
-  const onModelChange = (v: string | null) => {
-    if (v) handleModelChange(v)
   }
 
   const handleGenerate = async () => {
@@ -653,25 +649,12 @@ export default function PlaygroundPage() {
         {/* Input bar */}
         <div className="shrink-0 border-t bg-background/50 p-4">
           <div className="max-w-5xl mx-auto flex gap-6 items-center">
-            <Select value={selectedModel} onValueChange={onModelChange}>
-              <SelectTrigger className="w-[220px] h-[42px] text-sm shrink-0">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="auto">Auto (fallback chain)</SelectItem>
-                {availableModels.map(m => (
-                  <SelectItem key={m.modelDbId} value={m.modelId}>
-                    <span className="flex items-center gap-2">
-                      <span>{m.displayName}</span>
-                      <span className="text-xs text-muted-foreground">{m.platform}</span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${m.taskType === 'img2img' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'bg-blue-500/15 text-blue-600 dark:text-blue-400'}`}>
-                        {m.taskType === 'img2img' ? 'img2img' : 'txt2img'}
-                      </span>
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <ModelPicker
+              models={availableModels}
+              value={selectedModel}
+              onChange={handleModelChange}
+              hasImage={!!attachedImage}
+            />
             <input
               ref={fileInputRef}
               type="file"
@@ -710,15 +693,19 @@ export default function PlaygroundPage() {
                 </div>
               )}
               <div className="flex gap-2 items-end bg-muted/50 border rounded-xl p-2 focus-within:ring-2 focus-within:ring-ring/50 transition-shadow">
-                {currentModelTaskType === 'img2img' && (
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="shrink-0 p-1.5 rounded-lg hover:bg-background/80 transition-colors text-muted-foreground hover:text-foreground"
-                    title="Attach reference image"
-                  >
-                    <Paperclip className="h-5 w-5" />
-                  </button>
-                )}
+                <button
+                  onClick={() => currentModelTaskType === 'img2img' && fileInputRef.current?.click()}
+                  disabled={currentModelTaskType !== 'img2img'}
+                  className={cn(
+                    'shrink-0 p-1.5 rounded-lg transition-colors',
+                    currentModelTaskType === 'img2img'
+                      ? 'hover:bg-background/80 text-muted-foreground hover:text-foreground cursor-pointer'
+                      : 'text-muted-foreground/30 cursor-not-allowed'
+                  )}
+                  title={currentModelTaskType === 'img2img' ? 'Attach reference image' : 'Image input not supported by this model'}
+                >
+                  <Paperclip className="h-5 w-5" />
+                </button>
                 <textarea
                   ref={inputRef}
                   value={prompt}
@@ -737,6 +724,7 @@ export default function PlaygroundPage() {
                 <Button
                   onClick={handleGenerate}
                   disabled={loading || !prompt.trim() || (currentModelTaskType === 'img2img' && !attachedImage)}
+                  title={currentModelTaskType === 'img2img' && !attachedImage ? 'Attach a reference image for img2img models' : undefined}
                   className="shrink-0 rounded-lg h-9"
                 >
                 {loading ? (
