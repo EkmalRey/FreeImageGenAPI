@@ -37,7 +37,7 @@ keysRouter.get('/', (_req: Request, res: Response) => {
     return {
       id: row.id,
       platform: row.platform,
-      label: row.label,
+      label: row.label || maskedKey,
       maskedKey,
       status: row.status,
       enabled: row.enabled === 1,
@@ -59,17 +59,18 @@ keysRouter.post('/', (req: Request, res: Response) => {
 
   const { platform, key, label } = parsed.data;
   const { encrypted, iv, authTag } = encrypt(key);
+  const autoLabel = label?.trim() || maskKey(key);
 
   const db = getDb();
   const result = db.prepare(`
     INSERT INTO api_keys (platform, label, encrypted_key, iv, auth_tag, status, enabled)
     VALUES (?, ?, ?, ?, ?, 'unknown', 1)
-  `).run(platform, label ?? '', encrypted, iv, authTag);
+  `).run(platform, autoLabel, encrypted, iv, authTag);
 
   res.status(201).json({
     id: result.lastInsertRowid,
     platform,
-    label: label ?? '',
+    label: autoLabel,
     maskedKey: maskKey(key),
     status: 'unknown',
     enabled: true,

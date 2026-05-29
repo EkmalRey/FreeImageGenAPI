@@ -20,13 +20,19 @@ fallbackRouter.get('/', (_req: Request, res: Response) => {
     ORDER BY fc.priority ASC
   `).all() as any[];
 
-  // Count enabled keys per platform
-  const keyCounts = db.prepare(`
-    SELECT platform, COUNT(*) as count
-    FROM api_keys WHERE enabled = 1
+  // Count enabled keys per platform and get health breakdown
+  const keyDetails = db.prepare(`
+    SELECT platform,
+      COUNT(*) as total,
+      SUM(CASE WHEN enabled = 1 THEN 1 ELSE 0 END) as enabled_count,
+      SUM(CASE WHEN status = 'healthy' AND enabled = 1 THEN 1 ELSE 0 END) as healthy,
+      SUM(CASE WHEN status = 'rate_limited' AND enabled = 1 THEN 1 ELSE 0 END) as rate_limited,
+      SUM(CASE WHEN status = 'invalid' AND enabled = 1 THEN 1 ELSE 0 END) as invalid,
+      SUM(CASE WHEN status = 'error' AND enabled = 1 THEN 1 ELSE 0 END) as errored
+    FROM api_keys
     GROUP BY platform
-  `).all() as { platform: string; count: number }[];
-  const keyCountMap = new Map(keyCounts.map(k => [k.platform, k.count]));
+  `).all() as { platform: string; total: number; enabled_count: number; healthy: number; rate_limited: number; invalid: number; errored: number }[];
+  const keyDetailsMap = new Map(keyDetails.map(k => [k.platform, k]));
 
   // Get current dynamic penalties
   const penalties = getAllPenalties();
@@ -34,6 +40,7 @@ fallbackRouter.get('/', (_req: Request, res: Response) => {
 
   res.json(rows.map(r => {
     const penalty = penaltyMap.get(r.model_db_id);
+    const kd = keyDetailsMap.get(r.platform);
     return {
       modelDbId: r.model_db_id,
       priority: r.priority,
@@ -50,7 +57,13 @@ fallbackRouter.get('/', (_req: Request, res: Response) => {
       rpmLimit: r.rpm_limit,
       rpdLimit: r.rpd_limit,
       monthlyTokenBudget: r.monthly_token_budget,
-      keyCount: keyCountMap.get(r.platform) ?? 0,
+      keyCount: kd?.enabled_count ?? 0,
+      keyHealth: {
+        healthy: kd?.healthy ?? 0,
+        rateLimited: kd?.rate_limited ?? 0,
+        invalid: kd?.invalid ?? 0,
+        error: kd?.errored ?? 0,
+      },
     };
   }));
 });

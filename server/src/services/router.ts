@@ -4,6 +4,25 @@ import { decrypt } from '../lib/crypto.js';
 import { canMakeRequest, canUseTokens, isOnCooldown } from './ratelimit.js';
 import type { BaseProvider } from '../providers/base.js';
 
+const AUTO_DISABLE_THRESHOLD = 5;
+const key429Count = new Map<number, number>();
+
+export function recordKey429(keyId: number) {
+  const count = (key429Count.get(keyId) ?? 0) + 1;
+  key429Count.set(keyId, count);
+  
+  if (count >= AUTO_DISABLE_THRESHOLD) {
+    const db = getDb();
+    db.prepare('UPDATE api_keys SET enabled = 0, status = ? WHERE id = ?').run('rate_limited', keyId);
+    key429Count.delete(keyId);
+    console.log(`[Router] Auto-disabled key ${keyId} after ${count} consecutive 429s`);
+  }
+}
+
+export function clearKey429Count(keyId: number) {
+  key429Count.delete(keyId);
+}
+
 interface ModelRow {
   id: number;
   platform: string;
@@ -127,11 +146,15 @@ export function getAllPenalties(): Array<{ modelDbId: number; count: number; pen
  * If preferredModelDbId is set, that model gets tried FIRST (sticky sessions).
  * This prevents hallucination from model switching mid-conversation.
  *
+ * If preferredKeyId is set, that key gets tried FIRST within the model.
+ * This ensures consistency within a chat session.
+ *
  * @param estimatedTokens - estimated total tokens for rate limit check
  * @param skipKeys - set of "platform:modelId:keyId" to skip (failed on this request)
  * @param preferredModelDbId - try this model first (sticky session)
+ * @param preferredKeyId - try this key first within the model (sticky key affinity)
  */
-export function routeRequest(estimatedTokens = 1000, skipKeys?: Set<string>, preferredModelDbId?: number): RouteResult {
+export function routeRequest(estimatedTokens = 1000, skipKeys?: Set<string>, preferredModelDbId?: number, preferredKeyId?: number): RouteResult {
   const db = getDb();
 
   // Get fallback chain ordered by priority
@@ -186,9 +209,17 @@ export function routeRequest(estimatedTokens = 1000, skipKeys?: Set<string>, pre
     const rrKey = `${model.platform}:${model.model_id}`;
     let idx = roundRobinIndex.get(rrKey) ?? 0;
 
-    for (let attempt = 0; attempt < keys.length; attempt++) {
-      const key = keys[idx % keys.length];
-      idx++;
+    // Sticky key affinity: if we have a preferred key, try it first
+    let orderedKeys = keys;
+    if (preferredKeyId) {
+      const preferredIdx = keys.findIndex(k => k.id === preferredKeyId);
+      if (preferredIdx > 0) {
+        orderedKeys = [keys[preferredIdx], ...keys.slice(0, preferredIdx), ...keys.slice(preferredIdx + 1)];
+      }
+    }
+
+    for (let attempt = 0; attempt < orderedKeys.length; attempt++) {
+      const key = orderedKeys[attempt];
 
       const skipId = `${model.platform}:${model.model_id}:${key.id}`;
       if (skipKeys?.has(skipId)) continue;

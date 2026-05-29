@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { getDb } from '../db/index.js';
 import { checkKeyHealth, checkAllKeys } from '../services/health.js';
 import { hasProvider } from '../providers/index.js';
+import { getRateLimitStatus } from '../services/ratelimit.js';
 
 export const healthRouter = Router();
 
@@ -70,4 +71,44 @@ healthRouter.post('/check/:keyId', async (req: Request, res: Response) => {
 healthRouter.post('/check-all', async (_req: Request, res: Response) => {
   await checkAllKeys();
   res.json({ success: true });
+});
+
+// Get rate limit status for all keys
+healthRouter.get('/rate-limits', (_req: Request, res: Response) => {
+  const db = getDb();
+  
+  const keys = db.prepare(`
+    SELECT ak.id, ak.platform, ak.label, ak.status, ak.enabled,
+           GROUP_CONCAT(DISTINCT m.model_id) as model_ids
+    FROM api_keys ak
+    LEFT JOIN models m ON m.platform = ak.platform AND m.enabled = 1
+    WHERE ak.enabled = 1
+    GROUP BY ak.id
+  `).all() as any[];
+
+  const result = keys.map(k => {
+    const modelIds = k.model_ids ? k.model_ids.split(',') : [];
+    const modelLimits = modelIds.map((modelId: string) => {
+      const model = db.prepare('SELECT rpm_limit, rpd_limit, tpm_limit, tpd_limit FROM models WHERE platform = ? AND model_id = ?').get(k.platform, modelId) as any;
+      if (!model) return null;
+      const limits = {
+        rpm: model.rpm_limit,
+        rpd: model.rpd_limit,
+        tpm: model.tpm_limit,
+        tpd: model.tpd_limit,
+      };
+      const status = getRateLimitStatus(k.platform, modelId, k.id, limits);
+      return { modelId, ...status };
+    }).filter(Boolean);
+
+    return {
+      keyId: k.id,
+      platform: k.platform,
+      label: k.label,
+      status: k.status,
+      models: modelLimits,
+    };
+  });
+
+  res.json(result);
 });

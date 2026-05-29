@@ -39,6 +39,12 @@ interface FallbackEntry {
   rpdLimit: number | null
   monthlyTokenBudget: string
   keyCount: number
+  keyHealth: {
+    healthy: number
+    rateLimited: number
+    invalid: number
+    error: number
+  }
 }
 
 function formatTokens(n: number): string {
@@ -189,6 +195,34 @@ function SortableModelRow({
           {entry.rpdLimit && <span>{entry.rpdLimit} rpd</span>}
           <span>{entry.monthlyTokenBudget}</span>
         </div>
+        {entry.keyCount > 0 && (
+          <div className="flex gap-1.5 mt-1">
+            {entry.keyHealth.healthy > 0 && (
+              <span className="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                <span className="size-1.5 rounded-full bg-green-500" />
+                {entry.keyHealth.healthy} healthy
+              </span>
+            )}
+            {entry.keyHealth.rateLimited > 0 && (
+              <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                <span className="size-1.5 rounded-full bg-amber-500" />
+                {entry.keyHealth.rateLimited} limited
+              </span>
+            )}
+            {entry.keyHealth.invalid > 0 && (
+              <span className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
+                <span className="size-1.5 rounded-full bg-red-500" />
+                {entry.keyHealth.invalid} invalid
+              </span>
+            )}
+            {entry.keyHealth.error > 0 && (
+              <span className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
+                <span className="size-1.5 rounded-full bg-red-500" />
+                {entry.keyHealth.error} error
+              </span>
+            )}
+          </div>
+        )}
       </div>
       <Switch
         checked={entry.enabled}

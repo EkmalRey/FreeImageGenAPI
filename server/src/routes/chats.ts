@@ -55,7 +55,7 @@ chatsRouter.get('/:id', (req: Request, res: Response) => {
   }
 
   const messages = db.prepare(`
-    SELECT id, role, prompt, image_url, image_b64, revised_prompt, platform, model, latency_ms, file_size_kb, dimensions, error, created_at
+    SELECT id, role, prompt, image_url, image_b64, revised_prompt, platform, model, key_id, latency_ms, file_size_kb, dimensions, error, created_at
     FROM chat_messages
     WHERE session_id = ?
     ORDER BY created_at ASC
@@ -65,6 +65,7 @@ chatsRouter.get('/:id', (req: Request, res: Response) => {
     id: session.id,
     name: session.name,
     selectedModel: session.selected_model,
+    preferredKeyId: session.preferred_key_id,
     createdAt: session.created_at,
     updatedAt: session.updated_at,
     messages: messages.map(m => ({
@@ -76,6 +77,7 @@ chatsRouter.get('/:id', (req: Request, res: Response) => {
       revisedPrompt: m.revised_prompt,
       platform: m.platform,
       model: m.model,
+      keyId: m.key_id,
       latencyMs: m.latency_ms,
       fileSizeKb: m.file_size_kb,
       dimensions: m.dimensions,
@@ -85,10 +87,10 @@ chatsRouter.get('/:id', (req: Request, res: Response) => {
   });
 });
 
-// PATCH /api/chats/:id — rename session or update model
+// PATCH /api/chats/:id — rename session or update model/key
 chatsRouter.patch('/:id', (req: Request, res: Response) => {
   const db = getDb();
-  const { name, selectedModel } = req.body;
+  const { name, selectedModel, preferredKeyId } = req.body;
   const session = db.prepare('SELECT id FROM chat_sessions WHERE id = ?').get(req.params.id) as any;
   if (!session) {
     res.status(404).json({ error: { message: 'Chat session not found' } });
@@ -99,6 +101,9 @@ chatsRouter.patch('/:id', (req: Request, res: Response) => {
   }
   if (selectedModel && typeof selectedModel === 'string') {
     db.prepare("UPDATE chat_sessions SET selected_model = ?, updated_at = datetime('now') WHERE id = ?").run(selectedModel, req.params.id);
+  }
+  if (preferredKeyId !== undefined) {
+    db.prepare("UPDATE chat_sessions SET preferred_key_id = ?, updated_at = datetime('now') WHERE id = ?").run(preferredKeyId, req.params.id);
   }
   res.json({ ok: true });
 });
@@ -123,19 +128,19 @@ chatsRouter.post('/:sessionId/messages', (req: Request, res: Response) => {
     return;
   }
 
-  const { role, prompt, imageUrl, imageB64, revisedPrompt, platform, model, latencyMs, fileSizeKb, dimensions, error } = req.body;
+  const { role, prompt, imageUrl, imageB64, revisedPrompt, platform, model, keyId, latencyMs, fileSizeKb, dimensions, error } = req.body;
   if (!role || !['user', 'assistant'].includes(role)) {
     res.status(400).json({ error: { message: 'Valid role (user|assistant) is required' } });
     return;
   }
 
   const result = db.prepare(`
-    INSERT INTO chat_messages (session_id, role, prompt, image_url, image_b64, revised_prompt, platform, model, latency_ms, file_size_kb, dimensions, error)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO chat_messages (session_id, role, prompt, image_url, image_b64, revised_prompt, platform, model, key_id, latency_ms, file_size_kb, dimensions, error)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     req.params.sessionId, role,
     prompt ?? null, imageUrl ?? null, imageB64 ?? null,
-    revisedPrompt ?? null, platform ?? null, model ?? null,
+    revisedPrompt ?? null, platform ?? null, model ?? null, keyId ?? null,
     latencyMs ?? null, fileSizeKb ?? null, dimensions ?? null, error ?? null
   );
 
@@ -153,6 +158,7 @@ chatsRouter.post('/:sessionId/messages', (req: Request, res: Response) => {
     revisedPrompt: msg.revised_prompt,
     platform: msg.platform,
     model: msg.model,
+    keyId: msg.key_id,
     latencyMs: msg.latency_ms,
     fileSizeKb: msg.file_size_kb,
     dimensions: msg.dimensions,

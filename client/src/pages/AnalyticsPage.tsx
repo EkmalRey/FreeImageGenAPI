@@ -75,6 +75,11 @@ export default function AnalyticsPage() {
     queryFn: () => apiFetch<{ byCategory: any[]; byPlatform: any[]; detailed: any[] }>(`/api/analytics/error-distribution?range=${range}`),
   })
 
+  const { data: byKey = [] } = useQuery({
+    queryKey: ['analytics', 'by-key', range],
+    queryFn: () => apiFetch<any[]>(`/api/analytics/by-key?range=${range}`),
+  })
+
   return (
     <div>
       <PageHeader
@@ -188,6 +193,59 @@ export default function AnalyticsPage() {
                           <TableCell className="text-right tabular-nums">{m.avgLatencyMs} ms</TableCell>
                           <TableCell className="text-right tabular-nums">{formatTokens(m.totalInputTokens)}</TableCell>
                           <TableCell className="text-right tabular-nums pr-4">{formatTokens(m.totalOutputTokens)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </Panel>
+          </div>
+
+          <div className="lg:col-span-2">
+            <Panel title="Per-key breakdown">
+              {byKey.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">No data yet</p>
+              ) : (
+                <div className="max-h-[360px] overflow-y-auto -mx-4">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="pl-4">Key</TableHead>
+                        <TableHead>Provider</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Requests</TableHead>
+                        <TableHead className="text-right">Success</TableHead>
+                        <TableHead className="text-right">Errors</TableHead>
+                        <TableHead className="text-right">Latency</TableHead>
+                        <TableHead className="text-right">In tokens</TableHead>
+                        <TableHead className="text-right pr-4">Out tokens</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {byKey.map((k: any) => (
+                        <TableRow key={k.keyId}>
+                          <TableCell className="pl-4 text-sm font-medium">
+                            {k.keyLabel || `Key #${k.keyId}`}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{k.platform}</TableCell>
+                          <TableCell>
+                            <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${
+                              k.keyStatus === 'healthy' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                              k.keyStatus === 'rate_limited' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                              k.keyStatus === 'invalid' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                              k.keyStatus === 'error' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                              'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                            }`}>
+                              {k.keyStatus}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">{k.requests}</TableCell>
+                          <TableCell className="text-right tabular-nums">{k.successRate}%</TableCell>
+                          <TableCell className="text-right tabular-nums">{k.errorCount}</TableCell>
+                          <TableCell className="text-right tabular-nums">{k.avgLatencyMs} ms</TableCell>
+                          <TableCell className="text-right tabular-nums">{formatTokens(k.totalInputTokens)}</TableCell>
+                          <TableCell className="text-right tabular-nums pr-4">{formatTokens(k.totalOutputTokens)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

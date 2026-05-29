@@ -128,6 +128,7 @@ function createTables(db: Database.Database) {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       selected_model TEXT NOT NULL DEFAULT 'auto',
+      preferred_key_id INTEGER,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -142,6 +143,7 @@ function createTables(db: Database.Database) {
       revised_prompt TEXT,
       platform TEXT,
       model TEXT,
+      key_id INTEGER,
       latency_ms INTEGER,
       file_size_kb REAL,
       dimensions TEXT,
@@ -160,12 +162,28 @@ function createTables(db: Database.Database) {
 
   ensureRequestKeyIdColumn(db);
   ensureChatSessionsModelColumn(db);
+  ensureChatSessionsKeyColumn(db);
+  ensureChatMessagesKeyColumn(db);
 }
 
 function ensureChatSessionsModelColumn(db: Database.Database) {
   const columns = db.prepare('PRAGMA table_info(chat_sessions)').all() as { name: string }[];
   if (!columns.some(col => col.name === 'selected_model')) {
     db.prepare("ALTER TABLE chat_sessions ADD COLUMN selected_model TEXT NOT NULL DEFAULT 'auto'").run();
+  }
+}
+
+function ensureChatSessionsKeyColumn(db: Database.Database) {
+  const columns = db.prepare('PRAGMA table_info(chat_sessions)').all() as { name: string }[];
+  if (!columns.some(col => col.name === 'preferred_key_id')) {
+    db.prepare('ALTER TABLE chat_sessions ADD COLUMN preferred_key_id INTEGER').run();
+  }
+}
+
+function ensureChatMessagesKeyColumn(db: Database.Database) {
+  const columns = db.prepare('PRAGMA table_info(chat_messages)').all() as { name: string }[];
+  if (!columns.some(col => col.name === 'key_id')) {
+    db.prepare('ALTER TABLE chat_messages ADD COLUMN key_id INTEGER').run();
   }
 }
 

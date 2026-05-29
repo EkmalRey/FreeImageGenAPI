@@ -213,6 +213,51 @@ analyticsRouter.get('/error-distribution', (req: Request, res: Response) => {
   });
 });
 
+// Stats grouped by key
+analyticsRouter.get('/by-key', (req: Request, res: Response) => {
+  const range = (req.query.range as string) ?? '7d';
+  const since = getSinceTimestamp(range);
+  const db = getDb();
+
+  const rows = db.prepare(`
+    SELECT
+      r.key_id,
+      r.platform,
+      ak.label as key_label,
+      ak.status as key_status,
+      ak.enabled as key_enabled,
+      COUNT(*) as requests,
+      SUM(CASE WHEN r.status = 'success' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as success_rate,
+      AVG(r.latency_ms) as avg_latency_ms,
+      SUM(r.input_tokens) as total_input_tokens,
+      SUM(r.output_tokens) as total_output_tokens,
+      SUM(CASE WHEN r.status = 'error' THEN 1 ELSE 0 END) as error_count,
+      MIN(r.created_at) as first_used,
+      MAX(r.created_at) as last_used
+    FROM requests r
+    LEFT JOIN api_keys ak ON ak.id = r.key_id
+    WHERE r.created_at >= ? AND r.key_id IS NOT NULL
+    GROUP BY r.key_id
+    ORDER BY requests DESC
+  `).all(since) as any[];
+
+  res.json(rows.map(r => ({
+    keyId: r.key_id,
+    platform: r.platform,
+    keyLabel: r.key_label || `Key #${r.key_id}`,
+    keyStatus: r.key_status,
+    keyEnabled: r.key_enabled === 1,
+    requests: r.requests,
+    successRate: Math.round(r.success_rate * 10) / 10,
+    avgLatencyMs: Math.round(r.avg_latency_ms),
+    totalInputTokens: r.total_input_tokens ?? 0,
+    totalOutputTokens: r.total_output_tokens ?? 0,
+    errorCount: r.error_count,
+    firstUsed: r.first_used,
+    lastUsed: r.last_used,
+  })));
+});
+
 // Recent errors
 analyticsRouter.get('/errors', (req: Request, res: Response) => {
   const range = (req.query.range as string) ?? '7d';

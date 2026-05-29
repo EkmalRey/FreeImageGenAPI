@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { routeRequest, recordRateLimitHit, recordSuccess, type RouteResult } from '../services/router.js';
+import { routeRequest, recordRateLimitHit, recordSuccess, recordKey429, clearKey429Count, type RouteResult } from '../services/router.js';
 import { recordRequest, recordTokens, setCooldown, getNextCooldownDuration } from '../services/ratelimit.js';
 import { getDb, getUnifiedApiKey } from '../db/index.js';
 
@@ -156,13 +156,14 @@ proxyRouter.post('/images/generations', async (req: Request, res: Response) => {
 
       recordTokens(route.platform, route.modelId, route.keyId, actualTokens);
       recordSuccess(route.modelDbId);
+      clearKey429Count(route.keyId);
 
       res.setHeader('X-Routed-Via', `${route.platform}/${route.modelId}`);
       if (attempt > 0) res.setHeader('X-Fallback-Attempts', String(attempt));
       res.json({
         created: Math.floor(Date.now() / 1000),
         data: result.data,
-        _routed_via: { platform: route.platform, model: route.modelId },
+        _routed_via: { platform: route.platform, model: route.modelId, keyId: route.keyId },
         _usage: { total_tokens: actualTokens }
       });
 
@@ -187,6 +188,7 @@ proxyRouter.post('/images/generations', async (req: Request, res: Response) => {
           getNextCooldownDuration(route.platform, route.modelId, route.keyId),
         );
         recordRateLimitHit(route.modelDbId);
+        recordKey429(route.keyId);
         lastError = err;
         console.log(`[Proxy] ${err.message.slice(0, 60)} from ${route.displayName}, falling back (attempt ${attempt + 1}/${MAX_RETRIES})`);
         continue;

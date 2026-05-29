@@ -3,7 +3,8 @@ import { getProvider } from '../providers/index.js';
 import { decrypt } from '../lib/crypto.js';
 import type { Platform, KeyStatus } from '@freeimagegenapi/shared/types.js';
 
-const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const MIN_INTERVAL_MS = 8 * 60 * 1000;  // 8 minutes minimum
+const MAX_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes maximum
 const CONSECUTIVE_FAILURES_TO_DISABLE = 3;
 
 // Track consecutive failures per key
@@ -65,19 +66,36 @@ export async function checkAllKeys(): Promise<void> {
   console.log(`[Health] Check complete.`);
 }
 
-let intervalId: ReturnType<typeof setInterval> | null = null;
+let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+function getRandomInterval(): number {
+  return MIN_INTERVAL_MS + Math.random() * (MAX_INTERVAL_MS - MIN_INTERVAL_MS);
+}
+
+async function scheduleNextCheck(): Promise<void> {
+  const interval = getRandomInterval();
+  const minutes = Math.round(interval / 60000);
+  console.log(`[Health] Next check in ~${minutes} minutes`);
+  timeoutId = setTimeout(async () => {
+    await checkAllKeys().catch(err => console.error('[Health] Check failed:', err));
+    await scheduleNextCheck();
+  }, interval);
+}
 
 export function startHealthChecker(): void {
-  if (intervalId) return;
-  console.log(`[Health] Starting health checker (every ${CHECK_INTERVAL_MS / 1000}s)`);
-  intervalId = setInterval(() => {
-    checkAllKeys().catch(err => console.error('[Health] Check failed:', err));
-  }, CHECK_INTERVAL_MS);
+  if (timeoutId) return;
+  const interval = getRandomInterval();
+  const minutes = Math.round(interval / 60000);
+  console.log(`[Health] Starting health checker (first check in ~${minutes} minutes, then random 8-15 min)`);
+  timeoutId = setTimeout(async () => {
+    await checkAllKeys().catch(err => console.error('[Health] Check failed:', err));
+    await scheduleNextCheck();
+  }, interval);
 }
 
 export function stopHealthChecker(): void {
-  if (intervalId) {
-    clearInterval(intervalId);
-    intervalId = null;
+  if (timeoutId) {
+    clearTimeout(timeoutId);
+    timeoutId = null;
   }
 }

@@ -136,6 +136,12 @@ export default function KeysPage() {
     refetchInterval: 30000,
   })
 
+  const { data: rateLimitData = [] } = useQuery<any[]>({
+    queryKey: ['rate-limits'],
+    queryFn: () => apiFetch('/api/health/rate-limits'),
+    refetchInterval: 10000,
+  })
+
   const addKey = useMutation({
     mutationFn: (body: { platform: string; key: string; label?: string }) =>
       apiFetch('/api/keys', { method: 'POST', body: JSON.stringify(body) }),
@@ -199,6 +205,9 @@ export default function KeysPage() {
 
   const healthKeyMap = new Map<number, { status: string; lastCheckedAt: string | null }>()
   for (const k of healthData?.keys ?? []) healthKeyMap.set(k.id, k)
+
+  const rateLimitMap = new Map<number, any>()
+  for (const r of rateLimitData) rateLimitMap.set(r.keyId, r)
 
   const grouped = PLATFORMS.map(p => ({
     ...p,
@@ -308,30 +317,42 @@ export default function KeysPage() {
                   </div>
                   <div className="rounded-lg border divide-y bg-card overflow-hidden">
                     {group.keys.map(k => {
-                      const h = healthKeyMap.get(k.id)
-                      const status = h?.status ?? k.status
-                      const lastChecked = h?.lastCheckedAt
-                      return (
-                        <div key={k.id} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors">
-                          <span className={`size-1.5 rounded-full flex-shrink-0 ${statusDot[status] ?? statusDot.unknown}`} />
-                          <code className="text-xs font-mono flex-shrink-0">{k.maskedKey}</code>
-                          {k.label && <span className="text-xs text-muted-foreground">{k.label}</span>}
-                          <span className="text-xs text-muted-foreground">{statusLabel[status] ?? status}</span>
-                          <div className="flex-1" />
-                          {lastChecked && (
-                            <span className="text-[11px] text-muted-foreground tabular-nums">
-                              {new Date(lastChecked).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          )}
-                          <Button variant="ghost" size="xs" onClick={() => checkKey.mutate(k.id)} disabled={checkKey.isPending}>
-                            Check
-                          </Button>
-                          <Button variant="ghost" size="xs" className="text-muted-foreground hover:text-destructive" onClick={() => deleteKey.mutate(k.id)} disabled={deleteKey.isPending}>
-                            Remove
-                          </Button>
-                        </div>
-                      )
-                    })}
+                       const h = healthKeyMap.get(k.id)
+                       const status = h?.status ?? k.status
+                       const lastChecked = h?.lastCheckedAt
+                       const rl = rateLimitMap.get(k.id)
+                       const rpmUsed = rl?.models?.[0]?.rpm?.used
+                       const rpmLimit = rl?.models?.[0]?.rpm?.limit
+                       const rpdUsed = rl?.models?.[0]?.rpd?.used
+                       const rpdLimit = rl?.models?.[0]?.rpd?.limit
+                       return (
+                         <div key={k.id} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors">
+                           <span className={`size-1.5 rounded-full flex-shrink-0 ${statusDot[status] ?? statusDot.unknown}`} />
+                           <code className="text-xs font-mono flex-shrink-0">{k.maskedKey}</code>
+                           {k.label && <span className="text-xs text-muted-foreground">{k.label}</span>}
+                           <span className="text-xs text-muted-foreground">{statusLabel[status] ?? status}</span>
+                           {(rpmLimit || rpdLimit) && (
+                             <span className="text-xs text-muted-foreground tabular-nums">
+                               {rpmLimit && `${rpmUsed}/${rpmLimit} rpm`}
+                               {rpmLimit && rpdLimit && ' · '}
+                               {rpdLimit && `${rpdUsed}/${rpdLimit} rpd`}
+                             </span>
+                           )}
+                           <div className="flex-1" />
+                           {lastChecked && (
+                             <span className="text-[11px] text-muted-foreground tabular-nums">
+                               {new Date(lastChecked).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                             </span>
+                           )}
+                           <Button variant="ghost" size="xs" onClick={() => checkKey.mutate(k.id)} disabled={checkKey.isPending}>
+                             Check
+                           </Button>
+                           <Button variant="ghost" size="xs" className="text-muted-foreground hover:text-destructive" onClick={() => deleteKey.mutate(k.id)} disabled={deleteKey.isPending}>
+                             Remove
+                           </Button>
+                         </div>
+                       )
+                     })}
                   </div>
                 </div>
               ))}

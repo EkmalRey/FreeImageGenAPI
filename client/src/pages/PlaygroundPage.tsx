@@ -24,6 +24,7 @@ interface ChatMessage {
   revisedPrompt: string | null
   platform: string | null
   model: string | null
+  keyId: number | null
   latencyMs: number | null
   fileSizeKb: number | null
   dimensions: string | null
@@ -73,7 +74,7 @@ export default function PlaygroundPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(true)
-  const creatingRef = useRef(false)
+  const [isDraft, setIsDraft] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -101,13 +102,14 @@ export default function PlaygroundPage() {
   // Auto-select first session on initial load
   const didAutoSelect = useRef(false)
   useEffect(() => {
-    if (sessions.length > 0 && !activeSessionId && !didAutoSelect.current) {
+    if (sessions.length > 0 && !activeSessionId && !isDraft && !didAutoSelect.current) {
       didAutoSelect.current = true
       handleSwitchSession(sessions[0].id)
     }
-  }, [sessions, activeSessionId])
+  }, [sessions, activeSessionId, isDraft])
 
   const handleSwitchSession = async (id: string) => {
+    setIsDraft(false)
     setActiveSessionId(id)
     try {
       const data = await apiJson<{ messages: ChatMessage[]; selectedModel: string }>(`/api/chats/${id}`)
@@ -125,28 +127,13 @@ export default function PlaygroundPage() {
     } catch { /* ignore */ }
   }
 
-  const createSession = useMutation({
-    mutationFn: async (model?: string) => {
-      const body = model ? { selectedModel: model } : {}
-      const res = await apiJson<{ id: string }>('/api/chats', { method: 'POST', body: JSON.stringify(body) })
-      return res.id
-    },
-    onSuccess: (id) => {
-      creatingRef.current = false
-      queryClient.invalidateQueries({ queryKey: ['chat-sessions'] })
-      setActiveSessionId(id)
-      setMessages([])
-      setTimeout(() => inputRef.current?.focus(), 100)
-    },
-    onError: () => {
-      creatingRef.current = false
-    },
-  })
-
   const handleNewChat = () => {
-    if (creatingRef.current) return
-    creatingRef.current = true
-    createSession.mutate(selectedModel)
+    if (isDraft) return
+    setActiveSessionId(null)
+    setMessages([])
+    setPrompt('')
+    setIsDraft(true)
+    setTimeout(() => inputRef.current?.focus(), 100)
   }
 
   const deleteSession = useMutation({
@@ -160,6 +147,7 @@ export default function PlaygroundPage() {
         } else {
           setActiveSessionId(null)
           setMessages([])
+          setIsDraft(false)
         }
       }
     },
@@ -204,13 +192,13 @@ export default function PlaygroundPage() {
 
     let sessionId = activeSessionId
 
-    if (!sessionId) {
-      // No session yet — create one first, then generate
+    if (!sessionId || isDraft) {
       try {
         const res = await apiJson<{ id: string }>('/api/chats', { method: 'POST', body: JSON.stringify({ selectedModel }) })
         sessionId = res.id
         queryClient.invalidateQueries({ queryKey: ['chat-sessions'] })
         setActiveSessionId(sessionId)
+        setIsDraft(false)
         setMessages([])
       } catch (err: any) {
         return
@@ -240,7 +228,7 @@ export default function PlaygroundPage() {
       id: Date.now(),
       role: 'assistant',
       prompt: null, imageUrl: null, imageB64: null, revisedPrompt: null,
-      platform: null, model: null, latencyMs: null, fileSizeKb: null,
+      platform: null, model: null, keyId: null, latencyMs: null, fileSizeKb: null,
       dimensions: null, error: null, createdAt: new Date().toISOString(),
     }
     setMessages(prev => [...prev, placeholder])
@@ -279,6 +267,7 @@ export default function PlaygroundPage() {
       const via = data._routed_via ?? (routedVia ? {
         platform: routedVia.split('/')[0],
         model: routedVia.split('/').slice(1).join('/'),
+        keyId: null,
       } : undefined)
 
       let fileSizeKb: number | null = null
@@ -294,6 +283,7 @@ export default function PlaygroundPage() {
         revisedPrompt: image?.revised_prompt ?? null,
         platform: via?.platform ?? null,
         model: via?.model ?? null,
+        keyId: via?.keyId ?? null,
         latencyMs: latency,
         fileSizeKb,
       } : m))
@@ -308,10 +298,17 @@ export default function PlaygroundPage() {
             revisedPrompt: image?.revised_prompt ?? null,
             platform: via?.platform ?? null,
             model: via?.model ?? null,
+            keyId: via?.keyId ?? null,
             latencyMs: latency,
             fileSizeKb,
           }),
         })
+        if (via?.keyId) {
+          await apiJson(`/api/chats/${sessionId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ preferredKeyId: via.keyId }),
+          })
+        }
         queryClient.invalidateQueries({ queryKey: ['chat-sessions'] })
       } catch { /* ignore */ }
     } catch (err: any) {
@@ -358,7 +355,6 @@ export default function PlaygroundPage() {
               variant="outline"
               className="flex-1 justify-start gap-2 h-10 text-sm"
               onClick={handleNewChat}
-              disabled={createSession.isPending}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
               New Chat
@@ -450,15 +446,15 @@ export default function PlaygroundPage() {
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {/* Messages */}
         <div className="flex-1 overflow-y-auto scrollbar-styled">
-          {!activeSessionId ? (
+          {!activeSessionId && !isDraft ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center space-y-4">
                 <h1 className="text-2xl font-semibold tracking-tight">Image Playground</h1>
                 <p className="text-sm text-muted-foreground max-w-md">
                   Generate images using the proxy router. Sessions are saved automatically.
                 </p>
-                <Button onClick={handleNewChat} disabled={createSession.isPending}>
-                  {createSession.isPending ? 'Creating...' : 'Start a new chat'}
+                <Button onClick={handleNewChat}>
+                  Start a new chat
                 </Button>
               </div>
             </div>
