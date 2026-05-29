@@ -7,17 +7,17 @@ export class CloudflareProvider extends BaseProvider {
   readonly name = 'Cloudflare Workers AI';
 
   private readonly staticModels = [
-    { id: '@cf/black-forest-labs/flux-2-klein-9b', name: 'flux-2-klein-9b', int: 1, spd: 4, label: 'Standard', tpd: 10000, cost: 1364 },
-    { id: '@cf/runwayml/stable-diffusion-v1-5-inpainting', name: 'stable-diffusion-v1-5-inpainting', int: 4, spd: 1, label: 'Standard', tpd: 10000, cost: 10 },
-    { id: '@cf/black-forest-labs/flux-1-schnell', name: 'flux-1-schnell', int: 2, spd: 2, label: 'Standard', tpd: 10000, cost: 172.8 },
-    { id: '@cf/bytedance/stable-diffusion-xl-lightning', name: 'stable-diffusion-xl-lightning', int: 3, spd: 1, label: 'Standard', tpd: 10000, cost: 20 },
-    { id: '@cf/lykon/dreamshaper-8-lcm', name: 'dreamshaper-8-lcm', int: 3, spd: 1, label: 'Standard', tpd: 10000, cost: 15 },
-    { id: '@cf/stabilityai/phoenix-1.0', name: 'phoenix-1.0', int: 2, spd: 3, label: 'Standard', tpd: 10000, cost: 20 },
-    { id: '@cf/stabilityai/stable-diffusion-xl-base-1.0', name: 'stable-diffusion-xl-base-1.0', int: 3, spd: 3, label: 'Standard', tpd: 10000, cost: 20 },
-    { id: '@cf/black-forest-labs/flux-2-klein-4b', name: 'flux-2-klein-4b', int: 2, spd: 3, label: 'Standard', tpd: 10000, cost: 31 },
-    { id: '@cf/black-forest-labs/flux-2-dev', name: 'flux-2-dev', int: 1, spd: 5, label: 'Standard', tpd: 10000, cost: 56 },
-    { id: '@cf/runwayml/stable-diffusion-v1-5-img2img', name: 'stable-diffusion-v1-5-img2img', int: 4, spd: 2, label: 'Standard', tpd: 10000, cost: 10 },
-    { id: '@cf/lucid-origin/lucid-origin', name: 'lucid-origin', int: 2, spd: 3, label: 'Standard', tpd: 10000, cost: 20 },
+    { id: '@cf/black-forest-labs/flux-2-klein-9b', name: 'flux-2-klein-9b', int: 1, spd: 4, label: 'Standard', tpd: 10000, cost: 1364, taskType: 'img2img' as const },
+    { id: '@cf/runwayml/stable-diffusion-v1-5-inpainting', name: 'stable-diffusion-v1-5-inpainting', int: 4, spd: 1, label: 'Standard', tpd: 10000, cost: 10, taskType: 'img2img' as const },
+    { id: '@cf/black-forest-labs/flux-1-schnell', name: 'flux-1-schnell', int: 2, spd: 2, label: 'Standard', tpd: 10000, cost: 172.8, taskType: 'text-to-image' as const },
+    { id: '@cf/bytedance/stable-diffusion-xl-lightning', name: 'stable-diffusion-xl-lightning', int: 3, spd: 1, label: 'Standard', tpd: 10000, cost: 20, taskType: 'text-to-image' as const },
+    { id: '@cf/lykon/dreamshaper-8-lcm', name: 'dreamshaper-8-lcm', int: 3, spd: 1, label: 'Standard', tpd: 10000, cost: 15, taskType: 'text-to-image' as const },
+    { id: '@cf/stabilityai/phoenix-1.0', name: 'phoenix-1.0', int: 2, spd: 3, label: 'Standard', tpd: 10000, cost: 20, taskType: 'text-to-image' as const },
+    { id: '@cf/stabilityai/stable-diffusion-xl-base-1.0', name: 'stable-diffusion-xl-base-1.0', int: 3, spd: 3, label: 'Standard', tpd: 10000, cost: 20, taskType: 'text-to-image' as const },
+    { id: '@cf/black-forest-labs/flux-2-klein-4b', name: 'flux-2-klein-4b', int: 2, spd: 3, label: 'Standard', tpd: 10000, cost: 31, taskType: 'img2img' as const },
+    { id: '@cf/black-forest-labs/flux-2-dev', name: 'flux-2-dev', int: 1, spd: 5, label: 'Standard', tpd: 10000, cost: 56, taskType: 'img2img' as const },
+    { id: '@cf/runwayml/stable-diffusion-v1-5-img2img', name: 'stable-diffusion-v1-5-img2img', int: 4, spd: 2, label: 'Standard', tpd: 10000, cost: 10, taskType: 'img2img' as const },
+    { id: '@cf/lucid-origin/lucid-origin', name: 'lucid-origin', int: 2, spd: 3, label: 'Standard', tpd: 10000, cost: 20, taskType: 'text-to-image' as const },
   ];
 
   async generateImage(
@@ -34,19 +34,47 @@ export class CloudflareProvider extends BaseProvider {
     const token = parts[1].trim();
 
     const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${modelId}`;
+    const isFlux2 = modelId.includes('flux-2-');
 
     const data = [];
     const n = options?.n ?? 1;
 
     for (let i = 0; i < n; i++) {
-      const res = await this.fetchWithTimeout(url, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ prompt }),
-      });
+      let res: Response;
+
+      if (options?.image && isFlux2) {
+        // Flux-2 models use multipart form data with input_image_0
+        const form = new FormData();
+        form.append('prompt', prompt);
+        const imageBuffer = Buffer.from(options.image, 'base64');
+        const imageBlob = new Blob([imageBuffer], { type: 'image/png' });
+        form.append('input_image_0', imageBlob);
+        res = await this.fetchWithTimeout(url, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: form,
+        });
+      } else if (options?.image) {
+        // Stable Diffusion models use JSON with image_b64
+        res = await this.fetchWithTimeout(url, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ prompt, image_b64: options.image }),
+        });
+      } else {
+        // Text-to-image: JSON with prompt only
+        res = await this.fetchWithTimeout(url, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ prompt }),
+        });
+      }
 
       if (!res.ok) {
         const text = await res.text().catch(() => 'No error body');
@@ -128,13 +156,14 @@ export class CloudflareProvider extends BaseProvider {
       
       const disableOld = db.prepare(`UPDATE models SET enabled = 0 WHERE platform = 'cloudflare'`);
       const insertModel = db.prepare(`
-        INSERT INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, size_label, tpd_limit, monthly_token_budget, enabled)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+        INSERT INTO models (platform, model_id, display_name, intelligence_rank, speed_rank, size_label, task_type, tpd_limit, monthly_token_budget, enabled)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
         ON CONFLICT(platform, model_id) DO UPDATE SET 
           enabled = 1, 
           intelligence_rank = excluded.intelligence_rank,
           speed_rank = excluded.speed_rank,
           size_label = excluded.size_label,
+          task_type = excluded.task_type,
           tpd_limit = excluded.tpd_limit, 
           monthly_token_budget = excluded.monthly_token_budget
       `);
@@ -155,9 +184,10 @@ export class CloudflareProvider extends BaseProvider {
           const int = staticMeta ? staticMeta.int : 3;
           const spd = staticMeta ? staticMeta.spd : 3;
           const label = staticMeta ? staticMeta.label : 'Standard';
+          const taskType = staticMeta ? staticMeta.taskType : 'text-to-image';
           const tpd = 10000;
           
-          insertModel.run('cloudflare', modelIdStr, modelIdStr.split('/').pop() || modelIdStr, int, spd, label, tpd, '10K Tokens/Day');
+          insertModel.run('cloudflare', modelIdStr, modelIdStr.split('/').pop() || modelIdStr, int, spd, label, taskType, tpd, '10K Tokens/Day');
           insertFallback.run('cloudflare', modelIdStr);
         }
       });

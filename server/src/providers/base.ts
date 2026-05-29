@@ -10,6 +10,7 @@ export interface ImageGenerationOptions {
   response_format?: 'url' | 'b64_json';
   quality?: 'standard' | 'hd';
   style?: 'vivid' | 'natural';
+  image?: string; // base64-encoded input image for img2img models
 }
 
 export abstract class BaseProvider {

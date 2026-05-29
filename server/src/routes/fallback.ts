@@ -12,7 +12,7 @@ fallbackRouter.get('/', (_req: Request, res: Response) => {
   const rows = db.prepare(`
     SELECT fc.model_db_id, fc.priority, fc.enabled,
            m.platform, m.model_id, m.display_name, m.intelligence_rank,
-           m.speed_rank, m.size_label, m.rpm_limit, m.rpd_limit,
+           m.speed_rank, m.size_label, m.task_type, m.rpm_limit, m.rpd_limit,
            m.monthly_token_budget
     FROM fallback_config fc
     JOIN models m ON m.id = fc.model_db_id
@@ -54,6 +54,7 @@ fallbackRouter.get('/', (_req: Request, res: Response) => {
       intelligenceRank: r.intelligence_rank,
       speedRank: r.speed_rank,
       sizeLabel: r.size_label,
+      taskType: r.task_type,
       rpmLimit: r.rpm_limit,
       rpdLimit: r.rpd_limit,
       monthlyTokenBudget: r.monthly_token_budget,

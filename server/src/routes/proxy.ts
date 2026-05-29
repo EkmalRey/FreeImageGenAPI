@@ -55,6 +55,7 @@ const imageGenerationSchema = z.object({
   response_format: z.enum(['url', 'b64_json']).optional().default('url'),
   quality: z.enum(['standard', 'hd']).optional(),
   style: z.enum(['vivid', 'natural']).optional(),
+  image: z.string().optional(), // base64-encoded input image for img2img
 });
 
 export function isRetryableError(err: any): boolean {
@@ -94,10 +95,13 @@ proxyRouter.post('/images/generations', async (req: Request, res: Response) => {
     return;
   }
 
-  const { prompt, model: requestedModel, n, size, response_format, quality, style } = parsed.data;
+  const { prompt, model: requestedModel, n, size, response_format, quality, style, image } = parsed.data;
   
   // We estimate 1 token = 1 image generated for DB limits compatibility
   const estimatedTokens = n;
+
+  // Determine task type based on whether an image was provided
+  const taskType = image ? 'img2img' : 'text-to-image';
 
   let preferredModel: number | undefined;
   if (requestedModel && !isAutoModel(requestedModel)) {
@@ -125,7 +129,7 @@ proxyRouter.post('/images/generations', async (req: Request, res: Response) => {
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     let route: RouteResult;
     try {
-      route = routeRequest(estimatedTokens, skipKeys.size > 0 ? skipKeys : undefined, preferredModel);
+      route = routeRequest(estimatedTokens, skipKeys.size > 0 ? skipKeys : undefined, preferredModel, undefined, taskType);
     } catch (err: any) {
       if (lastError) {
         res.status(429).json({
@@ -149,7 +153,7 @@ proxyRouter.post('/images/generations', async (req: Request, res: Response) => {
       const provider = route.provider as any;
       const result = await provider.generateImage(
         route.apiKey, prompt, route.modelId,
-        { n, size, response_format, quality, style }
+        { n, size, response_format, quality, style, image }
       );
 
       const actualTokens = result._usage?.total_tokens ?? estimatedTokens;

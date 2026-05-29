@@ -28,6 +28,7 @@ interface ModelRow {
   platform: string;
   model_id: string;
   display_name: string;
+  task_type: string;
   rpm_limit: number | null;
   rpd_limit: number | null;
   tpm_limit: number | null;
@@ -153,16 +154,26 @@ export function getAllPenalties(): Array<{ modelDbId: number; count: number; pen
  * @param skipKeys - set of "platform:modelId:keyId" to skip (failed on this request)
  * @param preferredModelDbId - try this model first (sticky session)
  * @param preferredKeyId - try this key first within the model (sticky key affinity)
+ * @param taskType - filter models by task type ('text-to-image' or 'img2img')
  */
-export function routeRequest(estimatedTokens = 1000, skipKeys?: Set<string>, preferredModelDbId?: number, preferredKeyId?: number): RouteResult {
+export function routeRequest(estimatedTokens = 1000, skipKeys?: Set<string>, preferredModelDbId?: number, preferredKeyId?: number, taskType?: string): RouteResult {
   const db = getDb();
 
   // Get fallback chain ordered by priority
-  const fallbackChain = db.prepare(`
+  let fallbackChain = db.prepare(`
     SELECT fc.model_db_id, fc.priority, fc.enabled
     FROM fallback_config fc
     ORDER BY fc.priority ASC
   `).all() as FallbackRow[];
+
+  // Filter by task_type if specified
+  if (taskType) {
+    const matchingModelIds = db.prepare(
+      'SELECT id FROM models WHERE task_type = ? AND enabled = 1'
+    ).all(taskType).map((r: any) => r.id);
+    const matchingSet = new Set(matchingModelIds);
+    fallbackChain = fallbackChain.filter(e => matchingSet.has(e.model_db_id));
+  }
 
   // Apply dynamic penalties: sort by (base priority + penalty)
   const sortedChain = fallbackChain.map(entry => ({

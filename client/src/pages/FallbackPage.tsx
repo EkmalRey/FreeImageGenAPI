@@ -35,6 +35,7 @@ interface FallbackEntry {
   intelligenceRank: number
   speedRank: number
   sizeLabel: string
+  taskType: string
   rpmLimit: number | null
   rpdLimit: number | null
   monthlyTokenBudget: string
@@ -182,6 +183,9 @@ function SortableModelRow({
         <div className="flex items-center gap-2 flex-wrap">
           <span className="font-medium text-sm">{entry.displayName}</span>
           <span className="text-xs text-muted-foreground">{entry.platform}</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${entry.taskType === 'img2img' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'bg-blue-500/15 text-blue-600 dark:text-blue-400'}`}>
+            {entry.taskType === 'img2img' ? 'img2img' : 'txt2img'}
+          </span>
           {entry.penalty > 0 && (
             <span className="text-xs text-amber-600 dark:text-amber-400">
               −{entry.penalty} penalty

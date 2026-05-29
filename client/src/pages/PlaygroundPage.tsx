@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
+import { Maximize2, Copy, Download, Paperclip, X } from 'lucide-react'
 
 interface ChatSession {
   id: string
@@ -40,7 +41,17 @@ interface FallbackEntry {
   modelId: string
   displayName: string
   sizeLabel: string
+  taskType: string
   keyCount: number
+}
+
+function detectImageDimensions(src: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => resolve(`${img.naturalWidth}x${img.naturalHeight}`)
+    img.onerror = () => resolve(null)
+    img.src = src
+  })
 }
 
 async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -75,8 +86,85 @@ export default function PlaygroundPage() {
   const [editName, setEditName] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [isDraft, setIsDraft] = useState(false)
+  const [fullscreenImg, setFullscreenImg] = useState<string | null>(null)
+  const [copiedToast, setCopiedToast] = useState(false)
+  const [attachedImage, setAttachedImage] = useState<string | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleCopyImage = useCallback((b64: string | null, url: string | null) => {
+    const src = b64 ? `data:image/png;base64,${b64}` : url
+    if (!src) return
+
+    async function modernCopy(): Promise<boolean> {
+      try {
+        let blob: Blob
+        if (b64) {
+          const byteChars = atob(b64)
+          const bytes = new Uint8Array(byteChars.length)
+          for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i)
+          blob = new Blob([bytes], { type: 'image/png' })
+        } else {
+          const res = await fetch(url!)
+          blob = await res.blob()
+        }
+        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    // Fallback for non-secure contexts (e.g. http:// on a LAN IP) where
+    // navigator.clipboard is unavailable. Uses a contenteditable + execCommand.
+    function legacyCopy(): Promise<boolean> {
+      return new Promise((resolve) => {
+        const img = document.createElement('img')
+        img.onload = () => {
+          const div = document.createElement('div')
+          div.contentEditable = 'true'
+          div.style.position = 'fixed'
+          div.style.left = '-9999px'
+          div.style.opacity = '0'
+          div.appendChild(img)
+          document.body.appendChild(div)
+          const range = document.createRange()
+          range.selectNode(div)
+          const sel = window.getSelection()
+          sel?.removeAllRanges()
+          sel?.addRange(range)
+          let ok = false
+          try { ok = document.execCommand('copy') } catch { ok = false }
+          sel?.removeAllRanges()
+          document.body.removeChild(div)
+          resolve(ok)
+        }
+        img.onerror = () => resolve(false)
+        img.src = src!
+      })
+    }
+
+    async function run() {
+      let ok = false
+      if (window.isSecureContext && navigator.clipboard && 'write' in navigator.clipboard) {
+        ok = await modernCopy()
+      }
+      if (!ok) ok = await legacyCopy()
+      if (ok) {
+        setCopiedToast(true)
+        setTimeout(() => setCopiedToast(false), 2000)
+      }
+    }
+    run()
+  }, [])
+
+  const handleDownloadImage = useCallback((src: string, filename: string) => {
+    const a = document.createElement('a')
+    a.href = src
+    a.download = filename
+    a.click()
+  }, [])
 
   const { data: keyData } = useQuery<{ apiKey: string }>({
     queryKey: ['unified-key'],
@@ -94,6 +182,9 @@ export default function PlaygroundPage() {
   })
 
   const availableModels = fallbackEntries.filter(e => e.keyCount > 0 && e.enabled)
+  const currentModelTaskType = selectedModel === 'auto'
+    ? (attachedImage ? 'img2img' : 'text-to-image')
+    : availableModels.find(m => m.modelId === selectedModel)?.taskType ?? 'text-to-image'
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -175,6 +266,12 @@ export default function PlaygroundPage() {
 
   const handleModelChange = async (v: string) => {
     setSelectedModel(v)
+    if (v !== 'auto') {
+      const model = availableModels.find(m => m.modelId === v)
+      if (model?.taskType === 'text-to-image') {
+        setAttachedImage(null)
+      }
+    }
     if (activeSessionId) {
       await updateSessionModel(activeSessionId, v)
       queryClient.invalidateQueries({ queryKey: ['chat-sessions'] })
@@ -209,6 +306,8 @@ export default function PlaygroundPage() {
   }
 
   const handleGenerateInternal = async (text: string, sessionId: string) => {
+    const imageToSend = attachedImage
+    setAttachedImage(null)
     setPrompt('')
     setLoading(true)
 
@@ -237,8 +336,9 @@ export default function PlaygroundPage() {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (keyData?.apiKey) headers['Authorization'] = `Bearer ${keyData.apiKey}`
 
-      const body: Record<string, any> = { prompt: text, n: 1, size: '1024x1024', response_format: 'url' }
+      const body: Record<string, any> = { prompt: text, n: 1, size: '1024x1024', response_format: 'b64_json' }
       if (selectedModel !== 'auto') body.model = selectedModel
+      if (imageToSend) body.image = imageToSend
 
       const base = import.meta.env.BASE_URL.replace(/\/$/, '')
       const start = Date.now()
@@ -276,6 +376,9 @@ export default function PlaygroundPage() {
         fileSizeKb = Math.round((Math.floor(b64Data.length * 0.75) / 1024) * 10) / 10
       }
 
+      const imgSrc = image?.url || (b64Data ? `data:image/jpeg;base64,${b64Data}` : null)
+      const dimensions = imgSrc ? await detectImageDimensions(imgSrc) : null
+
       setMessages(prev => prev.map(m => m.id === placeholder.id ? {
         ...m,
         imageUrl: image?.url ?? null,
@@ -286,6 +389,7 @@ export default function PlaygroundPage() {
         keyId: via?.keyId ?? null,
         latencyMs: latency,
         fileSizeKb,
+        dimensions,
       } : m))
 
       try {
@@ -301,6 +405,7 @@ export default function PlaygroundPage() {
             keyId: via?.keyId ?? null,
             latencyMs: latency,
             fileSizeKb,
+            dimensions,
           }),
         })
         if (via?.keyId) {
@@ -494,11 +599,36 @@ export default function PlaygroundPage() {
                             </span>
                           </div>
                         ) : (
-                          <img
-                            src={msg.imageUrl || `data:image/jpeg;base64,${msg.imageB64}`}
-                            alt={msg.revisedPrompt ?? msg.prompt ?? 'Generated image'}
-                            className="max-w-full max-h-[70vh] rounded-xl shadow-sm object-contain bg-background"
-                          />
+                          <div className="relative group">
+                            <img
+                              src={msg.imageUrl || `data:image/jpeg;base64,${msg.imageB64}`}
+                              alt={msg.revisedPrompt ?? msg.prompt ?? 'Generated image'}
+                              className="max-w-full max-h-[70vh] rounded-xl shadow-sm object-contain bg-background"
+                            />
+                            <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => setFullscreenImg(msg.imageUrl || `data:image/jpeg;base64,${msg.imageB64}`)}
+                                className="bg-background/20 hover:bg-background/90 backdrop-blur-sm rounded-lg p-1.5 shadow-sm transition-colors"
+                                title="Fullscreen"
+                              >
+                                <Maximize2 className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => handleCopyImage(msg.imageB64, msg.imageUrl)}
+                                className="bg-background/20 hover:bg-background/90 backdrop-blur-sm rounded-lg p-1.5 shadow-sm transition-colors"
+                                title="Copy image"
+                              >
+                                <Copy className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDownloadImage(msg.imageUrl || `data:image/jpeg;base64,${msg.imageB64}`, `${msg.revisedPrompt || msg.prompt || 'image'}.jpg`)}
+                                className="bg-background/20 hover:bg-background/90 backdrop-blur-sm rounded-lg p-1.5 shadow-sm transition-colors"
+                                title="Download"
+                              >
+                                <Download className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
                         )}
 
                         {(msg.platform || msg.latencyMs || msg.fileSizeKb || msg.dimensions) && (
@@ -524,7 +654,7 @@ export default function PlaygroundPage() {
         <div className="shrink-0 border-t bg-background/50 p-4">
           <div className="max-w-5xl mx-auto flex gap-6 items-center">
             <Select value={selectedModel} onValueChange={onModelChange}>
-              <SelectTrigger className="w-fit min-w-[160px] h-[42px] text-sm shrink-0">
+              <SelectTrigger className="w-[220px] h-[42px] text-sm shrink-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -534,32 +664,81 @@ export default function PlaygroundPage() {
                     <span className="flex items-center gap-2">
                       <span>{m.displayName}</span>
                       <span className="text-xs text-muted-foreground">{m.platform}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${m.taskType === 'img2img' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'bg-blue-500/15 text-blue-600 dark:text-blue-400'}`}>
+                        {m.taskType === 'img2img' ? 'img2img' : 'txt2img'}
+                      </span>
                     </span>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <div className="flex-1 flex gap-2 items-end bg-muted/50 border rounded-xl p-2 focus-within:ring-2 focus-within:ring-ring/50 transition-shadow">
-              <textarea
-                ref={inputRef}
-                value={prompt}
-                onChange={e => setPrompt(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Describe the image you want to generate..."
-                rows={1}
-                className="flex-1 resize-none bg-transparent px-2 py-1.5 text-sm focus:outline-none min-h-[24px] max-h-[160px]"
-                style={{ height: 'auto', overflow: 'hidden' }}
-                onInput={e => {
-                  const el = e.target as HTMLTextAreaElement
-                  el.style.height = 'auto'
-                  el.style.height = Math.min(el.scrollHeight, 160) + 'px'
-                }}
-              />
-              <Button
-                onClick={handleGenerate}
-                disabled={loading || !prompt.trim()}
-                className="shrink-0 rounded-lg h-9"
-              >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={e => {
+                const file = e.target.files?.[0]
+                if (!file) return
+                const reader = new FileReader()
+                reader.onloadend = () => {
+                  const result = reader.result as string
+                  const base64 = result.split(',')[1]
+                  setAttachedImage(base64)
+                }
+                reader.readAsDataURL(file)
+                e.target.value = ''
+              }}
+            />
+            <div className="flex-1 flex flex-col gap-2">
+              {attachedImage && (
+                <div className="flex items-center gap-2 px-2">
+                  <div className="relative">
+                    <img
+                      src={`data:image/png;base64,${attachedImage}`}
+                      alt="Attached"
+                      className="h-16 w-16 object-cover rounded-lg border"
+                    />
+                    <button
+                      onClick={() => setAttachedImage(null)}
+                      className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground rounded-full p-0.5"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                  <span className="text-xs text-muted-foreground">Reference image attached</span>
+                </div>
+              )}
+              <div className="flex gap-2 items-end bg-muted/50 border rounded-xl p-2 focus-within:ring-2 focus-within:ring-ring/50 transition-shadow">
+                {currentModelTaskType === 'img2img' && (
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="shrink-0 p-1.5 rounded-lg hover:bg-background/80 transition-colors text-muted-foreground hover:text-foreground"
+                    title="Attach reference image"
+                  >
+                    <Paperclip className="h-5 w-5" />
+                  </button>
+                )}
+                <textarea
+                  ref={inputRef}
+                  value={prompt}
+                  onChange={e => setPrompt(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={currentModelTaskType === 'img2img' ? "Describe how to transform the image..." : "Describe the image you want to generate..."}
+                  rows={1}
+                  className="flex-1 resize-none bg-transparent px-2 py-1.5 text-sm focus:outline-none min-h-[24px] max-h-[160px]"
+                  style={{ height: 'auto', overflow: 'hidden' }}
+                  onInput={e => {
+                    const el = e.target as HTMLTextAreaElement
+                    el.style.height = 'auto'
+                    el.style.height = Math.min(el.scrollHeight, 160) + 'px'
+                  }}
+                />
+                <Button
+                  onClick={handleGenerate}
+                  disabled={loading || !prompt.trim() || (currentModelTaskType === 'img2img' && !attachedImage)}
+                  className="shrink-0 rounded-lg h-9"
+                >
                 {loading ? (
                   <span className="flex items-center gap-1.5">
                     <span className="h-4 w-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
@@ -575,7 +754,32 @@ export default function PlaygroundPage() {
             </div>
           </div>
         </div>
+        </div>
       </div>
+      {fullscreenImg && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setFullscreenImg(null)}
+        >
+          <button
+            onClick={() => setFullscreenImg(null)}
+            className="absolute top-4 left-4 bg-white/20 hover:bg-white/40 text-white rounded-full p-2 transition-colors z-10"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+          <img
+            src={fullscreenImg}
+            alt="Fullscreen"
+            className="max-w-full max-h-full object-contain rounded-xl cursor-pointer"
+          />
+        </div>
+      )}
+      {copiedToast && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-green-600 text-white rounded-full px-5 py-2.5 shadow-lg text-sm font-semibold flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-200">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          Image copied
+        </div>
+      )}
     </div>
   )
 }

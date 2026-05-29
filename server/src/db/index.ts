@@ -55,6 +55,7 @@ function createTables(db: Database.Database) {
       intelligence_rank INTEGER NOT NULL,
       speed_rank INTEGER NOT NULL,
       size_label TEXT NOT NULL DEFAULT '',
+      task_type TEXT NOT NULL DEFAULT 'text-to-image',
       rpm_limit INTEGER,
       rpd_limit INTEGER,
       tpm_limit INTEGER,
@@ -164,6 +165,7 @@ function createTables(db: Database.Database) {
   ensureChatSessionsModelColumn(db);
   ensureChatSessionsKeyColumn(db);
   ensureChatMessagesKeyColumn(db);
+  ensureModelsTaskTypeColumn(db);
 }
 
 function ensureChatSessionsModelColumn(db: Database.Database) {
@@ -193,6 +195,13 @@ function ensureRequestKeyIdColumn(db: Database.Database) {
     db.prepare('ALTER TABLE requests ADD COLUMN key_id INTEGER').run();
   }
   db.prepare('CREATE INDEX IF NOT EXISTS idx_requests_key_id ON requests(key_id)').run();
+}
+
+function ensureModelsTaskTypeColumn(db: Database.Database) {
+  const columns = db.prepare('PRAGMA table_info(models)').all() as { name: string }[];
+  if (!columns.some(col => col.name === 'task_type')) {
+    db.prepare("ALTER TABLE models ADD COLUMN task_type TEXT NOT NULL DEFAULT 'text-to-image'").run();
+  }
 }
 
 function seedModels(db: Database.Database) {

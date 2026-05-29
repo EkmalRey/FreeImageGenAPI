@@ -68,6 +68,7 @@ export interface ImageGenerationRequest {
   response_format?: 'url' | 'b64_json';
   quality?: 'standard' | 'hd';
   style?: 'vivid' | 'natural';
+  image?: string; // base64-encoded input image for img2img
 }
 
 export interface ImageGenerationResponseData {
