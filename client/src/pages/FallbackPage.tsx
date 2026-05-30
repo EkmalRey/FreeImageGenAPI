@@ -39,6 +39,9 @@ interface FallbackEntry {
   rpmLimit: number | null
   rpdLimit: number | null
   monthlyTokenBudget: string
+  totalRequests: number
+  successRate: number
+  avgLatencyMs: number
   keyCount: number
   keyHealth: {
     healthy: number
@@ -85,8 +88,6 @@ function TokenUsageBar({ data }: { data: TokenUsageData }) {
   const remaining = Math.max(0, totalBudget - totalUsed)
   const remainingPct = totalBudget > 0 ? Math.round((remaining / totalBudget) * 100) : 0
 
-  // Scale each model's segment proportionally so the colored portion of the
-  // bar sums to `remaining`; the grey tail represents what's been used.
   const modelsWithWidth = models.map(m => ({
     ...m,
     remainingTokens: totalBudget > 0 ? (m.budget / totalBudget) * remaining : 0,
@@ -142,15 +143,6 @@ function TokenUsageBar({ data }: { data: TokenUsageData }) {
   )
 }
 
-function MetaItem({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <div className="text-[11px] leading-none text-muted-foreground">{label}</div>
-      <div className="mt-1 text-sm font-medium leading-none truncate">{children}</div>
-    </div>
-  )
-}
-
 function SortableModelRow({
   entry,
   index,
@@ -169,85 +161,127 @@ function SortableModelRow({
     transition,
   }
 
+  const okKeys = entry.keyHealth.healthy + entry.keyHealth.rateLimited
+  const totalKeys = okKeys + entry.keyHealth.invalid + entry.keyHealth.error
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`group px-4 py-4 bg-card ${isDragging ? 'opacity-50' : ''} ${entry.enabled ? '' : 'opacity-60'}`}
+      className={`group relative flex ${isDragging ? 'opacity-50 z-10' : ''} ${entry.enabled ? '' : 'opacity-60'}`}
     >
-      <div className="flex items-start gap-3">
-        <button
-          {...attributes}
-          {...listeners}
-          className="mt-1 cursor-grab active:cursor-grabbing text-muted-foreground/50 hover:text-foreground transition-colors"
-          aria-label="Drag to reorder"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-            <circle cx="9" cy="6" r="1.5" /><circle cx="15" cy="6" r="1.5" />
-            <circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" />
-            <circle cx="9" cy="18" r="1.5" /><circle cx="15" cy="18" r="1.5" />
-          </svg>
-        </button>
+      {/* Priority bar */}
+      <div
+        className="w-1 flex-shrink-0 rounded-l-xl"
+        style={{
+          opacity: entry.enabled ? 1 : 0.3,
+          background: `linear-gradient(to bottom, hsl(var(--foreground)), hsl(var(--muted-foreground)))`,
+        }}
+      />
 
-        <div className="flex-1 min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-mono text-muted-foreground">
-              #{index + 1}
-            </span>
-            <span className="truncate text-sm font-semibold">{entry.displayName}</span>
-            {entry.keyCount > 0 && entry.keyHealth.healthy > 0 && (
-              <span className="ml-auto inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-300">
-                <span className="size-1.5 rounded-full bg-emerald-500" />
-                {entry.keyHealth.healthy} healthy
-              </span>
-            )}
-            {entry.keyCount > 0 && entry.keyHealth.rateLimited > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300">
-                <span className="size-1.5 rounded-full bg-amber-500" />
-                {entry.keyHealth.rateLimited} limited
-              </span>
-            )}
-            {entry.keyCount > 0 && entry.keyHealth.invalid > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-xs text-red-700 dark:text-red-300">
-                <span className="size-1.5 rounded-full bg-red-500" />
-                {entry.keyHealth.invalid} invalid
-              </span>
-            )}
-            {entry.keyCount > 0 && entry.keyHealth.error > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-xs text-red-700 dark:text-red-300">
-                <span className="size-1.5 rounded-full bg-red-500" />
-                {entry.keyHealth.error} error
-              </span>
-            )}
-            <Switch
-              checked={entry.enabled}
-              onCheckedChange={(checked) => onToggle(entry.modelDbId, checked)}
-            />
-          </div>
+      <div className="flex-1 min-w-0 px-4 py-4 bg-card">
+        <div className="flex items-start gap-3">
+          {/* Drag handle */}
+          <button
+            {...attributes}
+            {...listeners}
+            className="mt-0.5 flex items-center justify-center size-7 rounded-md border border-transparent hover:border-border hover:bg-muted transition-all cursor-grab active:cursor-grabbing text-muted-foreground/50 hover:text-foreground"
+            aria-label="Drag to reorder"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="9" cy="6" r="1.5" /><circle cx="15" cy="6" r="1.5" />
+              <circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" />
+              <circle cx="9" cy="18" r="1.5" /><circle cx="15" cy="18" r="1.5" />
+            </svg>
+          </button>
 
-          {entry.penalty > 0 && (
-            <div className="mt-2 inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
-              Penalty {entry.penalty}
-            </div>
-          )}
-
-          <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-6">
-            <MetaItem label="Provider">{entry.platform}</MetaItem>
-            <MetaItem label="Intelligence">#{entry.intelligenceRank}</MetaItem>
-            <MetaItem label="Speed">#{entry.speedRank}</MetaItem>
-            <MetaItem label="Task">
-              <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${entry.taskType === 'img2img' ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300'}`}>
-                {entry.taskType === 'img2img' ? 'img2img' : 'txt2img'}
+          <div className="flex-1 min-w-0">
+            {/* Top row: priority, name, health, switch */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-mono text-muted-foreground">
+                #{index + 1}
               </span>
-            </MetaItem>
-            <MetaItem label="Rate limits">
-              {entry.rpmLimit || entry.rpdLimit ? (
-                <span>{entry.rpmLimit ?? '—'} rpm · {entry.rpdLimit ?? '—'} rpd</span>
-              ) : (
-                <span className="text-muted-foreground">No limits</span>
+              <span className="truncate text-sm font-semibold">{entry.displayName}</span>
+
+              {/* Compact key health chip */}
+              {entry.keyCount > 0 && (
+                <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium tabular-nums ${
+                  entry.keyHealth.healthy > 0
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                    : 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                }`}>
+                  <span className={`size-1.5 rounded-full ${
+                    entry.keyHealth.healthy > 0 ? 'bg-emerald-500' : 'bg-amber-500'
+                  }`} />
+                  {entry.keyHealth.healthy}/{totalKeys} ok
+                </span>
               )}
-            </MetaItem>
-            <MetaItem label="Budget">{entry.monthlyTokenBudget || '—'}</MetaItem>
+
+              {entry.keyHealth.rateLimited > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+                  <span className="size-1.5 rounded-full bg-amber-500" />
+                  {entry.keyHealth.rateLimited} limited
+                </span>
+              )}
+
+              {entry.keyHealth.error > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-700 dark:text-red-300">
+                  <span className="size-1.5 rounded-full bg-red-500" />
+                  {entry.keyHealth.error} error
+                </span>
+              )}
+
+              <Switch
+                checked={entry.enabled}
+                onCheckedChange={(checked) => onToggle(entry.modelDbId, checked)}
+              />
+            </div>
+
+            {/* Penalty */}
+            {entry.penalty > 0 && (
+              <div className="mt-2 inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+                Penalty {entry.penalty}
+              </div>
+            )}
+
+            {/* Metadata grid */}
+            <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-6">
+              <MetaItem label="Provider">{entry.platform}</MetaItem>
+              <MetaItem label="Intelligence">#{entry.intelligenceRank}</MetaItem>
+              <MetaItem label="Speed">#{entry.speedRank}</MetaItem>
+              <MetaItem label="Task">
+                <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-medium ${entry.taskType === 'img2img' ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300'}`}>
+                  {entry.taskType === 'img2img' ? 'img2img' : 'txt2img'}
+                </span>
+              </MetaItem>
+              <MetaItem label="Rate limits">
+                {entry.rpmLimit || entry.rpdLimit ? (
+                  <span>{entry.rpmLimit ?? '—'} rpm · {entry.rpdLimit ?? '—'} rpd</span>
+                ) : (
+                  <span className="text-muted-foreground">No limits</span>
+                )}
+              </MetaItem>
+              <MetaItem label="Budget">{entry.monthlyTokenBudget || '—'}</MetaItem>
+            </div>
+
+            {/* Performance stats row */}
+            <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground tabular-nums">
+              <span className="inline-flex items-center gap-1">
+                <span className="font-medium text-foreground">{formatTokens(entry.totalRequests)}</span> requests
+              </span>
+              {entry.totalRequests > 0 && (
+                <span className="inline-flex items-center gap-1">
+                  <span className={`font-medium ${entry.successRate >= 90 ? 'text-emerald-600 dark:text-emerald-400' : entry.successRate >= 70 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>
+                    {entry.successRate}%
+                  </span> success
+                </span>
+              )}
+              {entry.avgLatencyMs > 0 && (
+                <span className="inline-flex items-center gap-1">
+                  <span className="font-medium text-foreground">{entry.avgLatencyMs}</span> ms avg
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -255,9 +289,19 @@ function SortableModelRow({
   )
 }
 
+function MetaItem({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[11px] leading-none text-muted-foreground">{label}</div>
+      <div className="mt-1 text-sm font-medium leading-none truncate">{children}</div>
+    </div>
+  )
+}
+
 export default function FallbackPage() {
   const queryClient = useQueryClient()
   const [localEntries, setLocalEntries] = useState<FallbackEntry[] | null>(null)
+  const [sortPreset, setSortPreset] = useState<string | null>(null)
 
   const { data: entries = [], isLoading } = useQuery<FallbackEntry[]>({
     queryKey: ['fallback'],
@@ -284,12 +328,16 @@ export default function FallbackPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['fallback'] })
       setLocalEntries(null)
+      setSortPreset(null)
     },
   })
 
   const allEntries = localEntries ?? entries
   const displayEntries = allEntries.filter(e => e.keyCount > 0)
   const unconfiguredPlatforms = [...new Set(allEntries.filter(e => e.keyCount === 0).map(e => e.platform))]
+
+  const activeCount = allEntries.filter(e => e.enabled).length
+  const totalCount = allEntries.length
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -334,19 +382,34 @@ export default function FallbackPage() {
     <div>
       <PageHeader
         title="Fallback chain"
-        description="Drag to reorder. Requests try models top-to-bottom until one succeeds."
+        description={`${activeCount}/${totalCount} models active · Drag to reorder · Requests try top-to-bottom`}
         actions={
-          <>
-            <Button variant="outline" size="sm" onClick={() => sortMutation.mutate('intelligence')} disabled={sortMutation.isPending}>
-              Sort by intelligence
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => sortMutation.mutate('speed')} disabled={sortMutation.isPending}>
-              Sort by speed
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => sortMutation.mutate('budget')} disabled={sortMutation.isPending}>
-              Sort by budget
-            </Button>
-          </>
+          <div className="flex items-center gap-2">
+            {/* Segmented sort control */}
+            <div className="inline-flex rounded-md border bg-muted p-0.5">
+              {[
+                { key: 'intelligence', label: 'Intel' },
+                { key: 'speed', label: 'Speed' },
+                { key: 'budget', label: 'Budget' },
+              ].map(s => (
+                <button
+                  key={s.key}
+                  onClick={() => {
+                    setSortPreset(s.key)
+                    sortMutation.mutate(s.key)
+                  }}
+                  disabled={sortMutation.isPending}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-[5px] transition-colors ${
+                    sortPreset === s.key
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
         }
       />
 
@@ -356,12 +419,30 @@ export default function FallbackPage() {
         )}
 
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <div className="space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-20 rounded-xl bg-muted animate-pulse" />
+            ))}
+          </div>
         ) : displayEntries.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-8 text-center">
-            <p className="text-sm text-muted-foreground">
-              No models available. Add API keys on the <a href="/keys" className="underline text-foreground">Keys page</a> first.
-            </p>
+          <div className="rounded-xl border border-dashed p-12 text-center space-y-4">
+            <div className="mx-auto size-12 rounded-full bg-muted flex items-center justify-center">
+              <svg className="size-6 text-muted-foreground" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5 7.5 3m0 0L12 7.5M7.5 3v13.5m13.5-6L16.5 18m0 0L12 13.5m4.5 4.5V6" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-sm font-medium">No models available</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Add API keys on the <a href="/keys" className="underline text-foreground hover:text-foreground/80">Keys page</a> to populate the fallback chain.
+              </p>
+            </div>
+            <a
+              href="/keys"
+              className="inline-flex items-center justify-center h-7 gap-1 rounded-lg border border-border bg-background px-2.5 text-[0.8rem] font-medium text-foreground hover:bg-muted transition-colors"
+            >
+              Go to Keys
+            </a>
           </div>
         ) : (
           <>
