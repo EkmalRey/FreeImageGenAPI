@@ -38,25 +38,23 @@ fallbackRouter.get('/', (_req: Request, res: Response) => {
   const penalties = getAllPenalties();
   const penaltyMap = new Map(penalties.map(p => [p.modelDbId, p]));
 
-  // Get per-model request stats (success rate, avg latency, total requests)
+  // Per-model success rate and last used time
   const modelStats = db.prepare(`
-    SELECT
-      platform,
-      model_id,
+    SELECT platform, model_id,
       COUNT(*) as total_requests,
       SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success_count,
-      AVG(CASE WHEN status = 'success' THEN latency_ms END) as avg_latency_ms
+      MAX(created_at) as last_used
     FROM requests
     GROUP BY platform, model_id
-  `).all() as { platform: string; model_id: string; total_requests: number; success_count: number; avg_latency_ms: number }[];
+  `).all() as { platform: string; model_id: string; total_requests: number; success_count: number; last_used: string | null }[];
   const modelStatsMap = new Map(modelStats.map(s => [`${s.platform}:${s.model_id}`, s]));
 
   res.json(rows.map(r => {
     const penalty = penaltyMap.get(r.model_db_id);
     const kd = keyDetailsMap.get(r.platform);
     const stats = modelStatsMap.get(`${r.platform}:${r.model_id}`);
-    const totalRequests = stats?.total_requests ?? 0;
-    const successCount = stats?.success_count ?? 0;
+    const total = stats?.total_requests ?? 0;
+    const success = stats?.success_count ?? 0;
     return {
       modelDbId: r.model_db_id,
       priority: r.priority,
@@ -74,9 +72,6 @@ fallbackRouter.get('/', (_req: Request, res: Response) => {
       rpmLimit: r.rpm_limit,
       rpdLimit: r.rpd_limit,
       monthlyTokenBudget: r.monthly_token_budget,
-      totalRequests,
-      successRate: totalRequests > 0 ? Math.round((successCount / totalRequests) * 100) : 0,
-      avgLatencyMs: Math.round(stats?.avg_latency_ms ?? 0),
       keyCount: kd?.enabled_count ?? 0,
       keyHealth: {
         healthy: kd?.healthy ?? 0,
@@ -84,6 +79,8 @@ fallbackRouter.get('/', (_req: Request, res: Response) => {
         invalid: kd?.invalid ?? 0,
         error: kd?.errored ?? 0,
       },
+      successRate: total > 0 ? Math.round((success / total) * 100) : null,
+      lastUsed: stats?.last_used ?? null,
     };
   }));
 });
