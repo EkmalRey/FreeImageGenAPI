@@ -240,7 +240,7 @@ function SortableModelRow({
               </span>
 
               {(() => {
-                const rate = entry.successRate ?? (entry.lastUsed !== null ? null : 0)
+                const rate = entry.successRate ?? 0
                 const wasUsed = entry.lastUsed !== null
                 const isZeroFromNoUse = rate === 0 && !wasUsed
                 return (
@@ -424,7 +424,7 @@ export default function FallbackPage() {
               <span className="inline-flex items-center rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-emerald-700 dark:text-emerald-300 font-medium tabular-nums">{enabledModels} on</span>
               <span className="inline-flex items-center rounded-md border border-muted px-2 py-0.5 font-medium tabular-nums">{disabledModels} off</span>
             </div>
-            <Select value={platformFilter} onValueChange={setPlatformFilter}>
+            <Select value={platformFilter} onValueChange={(v) => setPlatformFilter(v ?? 'all')}>
               <SelectTrigger size="sm">
                 <SelectValue placeholder="All platforms" />
               </SelectTrigger>
@@ -436,10 +436,11 @@ export default function FallbackPage() {
               </SelectContent>
             </Select>
             <Select onValueChange={(v) => {
-              if (v === 'enable-all') handleBatchToggle(null, true)
-              else if (v === 'disable-all') handleBatchToggle(null, false)
-              else if (v.startsWith('enable-')) handleBatchToggle(v.replace('enable-', ''), true)
-              else if (v.startsWith('disable-')) handleBatchToggle(v.replace('disable-', ''), false)
+              const val = String(v ?? '')
+              if (val === 'enable-all') handleBatchToggle(null, true)
+              else if (val === 'disable-all') handleBatchToggle(null, false)
+              else if (val.startsWith('enable-')) handleBatchToggle(val.replace('enable-', ''), true)
+              else if (val.startsWith('disable-')) handleBatchToggle(val.replace('disable-', ''), false)
             }}>
               <SelectTrigger size="sm">
                 <SelectValue placeholder="Batch actions" />
@@ -455,7 +456,7 @@ export default function FallbackPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Select onValueChange={(v) => sortMutation.mutate(v)} disabled={sortMutation.isPending}>
+            <Select onValueChange={(v) => sortMutation.mutate(String(v ?? ''))} disabled={sortMutation.isPending}>
               <SelectTrigger size="sm">
                 <SelectValue placeholder="Sort by..." />
               </SelectTrigger>
